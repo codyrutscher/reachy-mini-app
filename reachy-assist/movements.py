@@ -458,3 +458,38 @@ class Movements:
     def reset(self, duration=0.5):
         """Return to neutral."""
         self._home(duration)
+
+    # ── Idle / ambient animations ───────────────────────────────────
+
+    def idle_look(self):
+        """Subtle look to one side then back — Reachy seems aware."""
+        import random
+        yaw = random.choice([-8, 8, -5, 5])
+        self._go(head=create_head_pose(yaw=yaw, mm=True, degrees=True), duration=1.2)
+        time.sleep(1.5)
+        self._home(1.0)
+
+    def idle_tilt(self):
+        """Gentle head tilt — Reachy looks curious/alive."""
+        import random
+        roll = random.choice([-6, 6, -4, 4])
+        self._go(head=create_head_pose(roll=roll, mm=True, degrees=True), duration=0.8)
+        time.sleep(1.0)
+        self._home(0.8)
+
+    def idle_breathe(self):
+        """Subtle breathing motion — very gentle up/down."""
+        self._go(head=create_head_pose(z=3, mm=True, degrees=True), duration=1.5)
+        time.sleep(0.3)
+        self._go(head=create_head_pose(z=-2, mm=True, degrees=True), duration=1.5)
+        time.sleep(0.3)
+        self._home(1.0)
+
+    def idle_antenna_twitch(self):
+        """Quick antenna twitch — Reachy seems alert."""
+        import random
+        a1 = random.randint(-15, 15)
+        a2 = random.randint(-15, 15)
+        self._go(antennas=[a1, a2], duration=0.3)
+        time.sleep(0.4)
+        self._go(antennas=[0, 0], duration=0.4)

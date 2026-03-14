@@ -60,6 +60,10 @@ class InteractionLoop:
         self.stories = StoryReader()
         self.meditation = MeditationGuide()
 
+        # Autonomy engine (proactive behaviors)
+        from autonomy import AutonomyEngine
+        self.autonomy = AutonomyEngine()
+
         self._pending_reminder = None
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
         self._last_interaction = time.time()
@@ -695,6 +699,9 @@ class InteractionLoop:
         self._log_activity("session_start", "Reachy assistant started")
         self._last_med_check_minute = ""
 
+        # Start autonomy engine
+        self.autonomy.start()
+
         try:
             while True:
                 # Check for pending reminders
@@ -726,6 +733,22 @@ class InteractionLoop:
                     self._last_med_check_minute = current_minute
                     self._check_medication_reminders()
 
+                # Process proactive actions from autonomy engine
+                proactive = self.autonomy.get_next_action()
+                if proactive:
+                    if proactive.action_type == "idle_anim":
+                        # Silent animation — no speech
+                        if proactive.robot_action:
+                            self.robot.perform(proactive.robot_action)
+                    elif proactive.message:
+                        if proactive.robot_action:
+                            self.robot.perform(proactive.robot_action)
+                        self.speech.speak(proactive.message)
+                        self._log_to_dashboard("reachy", proactive.message)
+                        self._log_activity("proactive_" + proactive.action_type, proactive.message[:80])
+                        time.sleep(0.5)
+                        self.robot.reset()
+
                 # Check inactivity
                 self._check_inactivity()
 
@@ -739,6 +762,7 @@ class InteractionLoop:
 
                 # Reset inactivity timer on any speech
                 self._reset_inactivity()
+                self.autonomy.notify_interaction()
 
                 # Log what patient said
                 self._log_to_dashboard("patient", text)
@@ -776,6 +800,7 @@ class InteractionLoop:
                 emotion = self._combine_emotions(text_emotion, face_emotion)
                 self.robot.express(emotion)
                 self._update_dashboard_status(mood=emotion)
+                self.autonomy.notify_mood(emotion)
 
                 # Safety check for caregiver alerts
                 lower = text.lower()
@@ -796,6 +821,7 @@ class InteractionLoop:
             print("\n[INFO] Shutting down...")
         finally:
             self._log_activity("session_end", "Reachy assistant stopped")
+            self.autonomy.stop()
             self.music.stop()
             self.reminders.stop()
             if self.face_detector:
