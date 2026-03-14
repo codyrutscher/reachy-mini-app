@@ -1,0 +1,129 @@
+{% extends "_base.html" %}
+{% block title %}Facilities — Reachy Care{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🏥 Facilities</div>
+      <div class="page-subtitle">Manage care facilities and robot assignments</div>
+    </div>
+    <button class="btn btn-primary" onclick="showAddModal()">+ Add Facility</button>
+  </div>
+
+  <div class="grid-3" id="facilityGrid"></div>
+  <div class="empty" id="emptyFacilities">
+    <div class="empty-icon">🏥</div>
+    <p>No facilities added yet. Click "Add Facility" to get started.</p>
+  </div>
+</div>
+
+<!-- Add Facility Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div class="modal-title">Add Facility</div>
+    <div class="form-group">
+      <label class="form-label">Facility Name</label>
+      <input class="form-input" id="fName" placeholder="e.g. Sunrise Senior Living">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Address</label>
+      <input class="form-input" id="fAddress" placeholder="e.g. [address]">
+    </div>
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">Type</label>
+        <select class="form-input" id="fType">
+          <option value="nursing_home">Nursing Home</option>
+          <option value="assisted_living">Assisted Living</option>
+          <option value="home_care">Home Care</option>
+          <option value="hospital">Hospital</option>
+          <option value="rehab">Rehabilitation</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Robots Assigned</label>
+        <input class="form-input" id="fRobots" type="number" value="1" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Contact Person</label>
+      <input class="form-input" id="fContact" placeholder="e.g. [name] — [phone_number]">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="hideAddModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addFacility()">Add Facility</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TYPE_LABELS = {
+  nursing_home:'Nursing Home', assisted_living:'Assisted Living',
+  home_care:'Home Care', hospital:'Hospital', rehab:'Rehabilitation',
+};
+const TYPE_ICONS = {
+  nursing_home:'🏠', assisted_living:'🏡', home_care:'🏘️', hospital:'🏥', rehab:'💪',
+};
+
+let facilities = [];
+
+async function loadFacilities() {
+  try {
+    const res = await fetch('/api/facilities');
+    facilities = await res.json();
+  } catch(e) { facilities = []; }
+  render();
+}
+
+function render() {
+  const grid = document.getElementById('facilityGrid');
+  const empty = document.getElementById('emptyFacilities');
+  if (!facilities.length) { grid.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+
+  grid.innerHTML = facilities.map(f => `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <div style="font-size:28px;">${TYPE_ICONS[f.type]||'🏥'}</div>
+      <button class="btn btn-ghost btn-sm" onclick="removeFacility(${f.id})">✕</button>
+    </div>
+    <div style="font-weight:600;font-size:15px;margin:8px 0 4px;">${f.name}</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">${f.address||'No address'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <span class="badge badge-blue">${TYPE_LABELS[f.type]||f.type}</span>
+      <span class="badge badge-green">${f.robots||0} robot${f.robots!==1?'s':''}</span>
+      <span class="badge badge-muted">${f.patients||0} patient${f.patients!==1?'s':''}</span>
+    </div>
+    ${f.contact?`<div style="font-size:12px;color:var(--muted);margin-top:8px;">📞 ${f.contact}</div>`:''}
+  </div>`).join('');
+}
+
+function showAddModal() { document.getElementById('addModal').classList.add('show'); }
+function hideAddModal() { document.getElementById('addModal').classList.remove('show'); }
+
+async function addFacility() {
+  const data = {
+    name: document.getElementById('fName').value.trim(),
+    address: document.getElementById('fAddress').value.trim(),
+    type: document.getElementById('fType').value,
+    robots: parseInt(document.getElementById('fRobots').value) || 0,
+    contact: document.getElementById('fContact').value.trim(),
+  };
+  if (!data.name) return alert('Please enter a facility name');
+  await fetch('/api/facilities', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  hideAddModal();
+  ['fName','fAddress','fContact'].forEach(id => document.getElementById(id).value='');
+  loadFacilities();
+}
+
+async function removeFacility(id) {
+  if (!confirm('Remove this facility?')) return;
+  await fetch(`/api/facilities/${id}`, {method:'DELETE'});
+  loadFacilities();
+}
+
+loadFacilities();
+</script>
+{% endblock %}

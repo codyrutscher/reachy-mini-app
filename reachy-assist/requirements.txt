@@ -1,0 +1,9 @@
+reachy-mini
+openai-whisper
+pyttsx3
+sounddevice
+numpy
+opencv-python
+facenet-pytorch
+hsemotion-onnx
+openai

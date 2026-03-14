@@ -1,0 +1,72 @@
+{% extends "_base.html" %}
+{% block title %}Schedule — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📅 Scheduled Messages</div>
+      <div class="page-subtitle">Set messages for Reachy to say at specific times</div>
+    </div>
+    <button class="btn btn-primary" onclick="showAddModal()">+ Schedule Message</button>
+  </div>
+  <div class="card">
+    <table class="table" id="schedTable">
+      <thead><tr><th>Message</th><th>Time</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
+      <tbody id="schedBody"></tbody>
+    </table>
+    <div class="empty" id="schedEmpty"><div class="empty-icon">📅</div><p>No scheduled messages. Click "Schedule Message" to add one.</p></div>
+  </div>
+  <div class="card" style="margin-top:16px;">
+    <div class="card-header"><div class="card-title">💡 Quick Schedule Ideas</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time to drink some water!','09:00','daily')">💧 Water reminder 9am</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time for your morning medication!','08:00','daily')">💊 Morning meds 8am</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('How about a little stretch?','14:00','daily')">🧘 Afternoon stretch 2pm</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time to get ready for bed. Goodnight!','21:00','daily')">🌙 Bedtime 9pm</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Your family sends their love!','12:00','daily')">❤️ Midday love 12pm</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div class="modal-title">Schedule a Message</div>
+    <div class="form-group"><label class="form-label">Message (Reachy will say this)</label><textarea class="form-input" id="sText" placeholder="e.g. Time to take your afternoon medication!"></textarea></div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Time (HH:MM)</label><input class="form-input" id="sTime" type="time" value="08:00"></div>
+      <div class="form-group"><label class="form-label">Repeat</label><select class="form-input" id="sRepeat"><option value="once">Once</option><option value="daily">Daily</option><option value="weekdays">Weekdays</option></select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="hideAddModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addSched()">Schedule</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var items=[];
+async function load(){items=await fetch('/api/scheduled').then(function(r){return r.json();});render();}
+function render(){
+  var body=document.getElementById('schedBody'),empty=document.getElementById('schedEmpty');
+  if(!items.length){body.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  body.innerHTML=items.map(function(s){
+    return '<tr><td style="max-width:300px;">'+s.text+'</td><td>'+s.time+'</td><td><span class="badge badge-blue">'+s.repeat+'</span></td><td><span class="badge badge-'+(s.active?'green':'muted')+'">'+(s.active?'Active':'Paused')+'</span></td><td><button class="btn btn-ghost btn-sm" onclick="toggleSched('+s.id+')">'+(s.active?'Pause':'Resume')+'</button> <button class="btn btn-ghost btn-sm" onclick="delSched('+s.id+')">x</button></td></tr>';
+  }).join('');
+}
+function showAddModal(){document.getElementById('addModal').classList.add('show');}
+function hideAddModal(){document.getElementById('addModal').classList.remove('show');}
+async function addSched(){
+  var d={text:document.getElementById('sText').value.trim(),time:document.getElementById('sTime').value,repeat:document.getElementById('sRepeat').value};
+  if(!d.text)return alert('Enter a message');
+  await fetch('/api/scheduled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  hideAddModal();document.getElementById('sText').value='';load();
+}
+async function quickSched(text,time,repeat){
+  await fetch('/api/scheduled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,time:time,repeat:repeat})});load();
+}
+async function delSched(id){if(!confirm('Delete?'))return;await fetch('/api/scheduled/'+id,{method:'DELETE'});load();}
+async function toggleSched(id){await fetch('/api/scheduled/'+id+'/toggle',{method:'POST'});load();}
+load();
+</script>
+{% endblock %}

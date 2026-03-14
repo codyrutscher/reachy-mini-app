@@ -1,0 +1,34 @@
+{% extends "_base.html" %}
+{% block title %}Activity Log — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📋 Activity Log</div>
+      <div class="page-subtitle">Everything that happened — timestamped</div>
+    </div>
+  </div>
+  <div class="card">
+    <div id="actList" style="max-height:70vh;overflow-y:auto;"></div>
+    <div class="empty" id="actEmpty"><div class="empty-icon">📋</div><p>No activity recorded yet.</p></div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var acts=[];
+var ACT_ICONS={login:'��',alert:'⚠️',message_sent:'💬',patient_spoke:'🎙️',med_added:'💊',med_log:'💊',schedule_added:'📅',patient_added:'👥',checkin:'📋',scheduled_message:'📅'};
+async function load(){acts=await fetch('/api/activity').then(function(r){return r.json();});render();}
+function render(){
+  var el=document.getElementById('actList'),empty=document.getElementById('actEmpty');
+  if(!acts.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=acts.map(function(a){
+    var icon=ACT_ICONS[a.action]||'📌';
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;"><span style="font-size:18px;">'+icon+'</span><div style="flex:1;"><div style="font-size:13px;"><span style="font-weight:500;">'+a.action+'</span>'+(a.details?' — '+a.details:'')+'</div><div style="font-size:11px;color:var(--muted);">'+a.time+'</div></div></div>';
+  }).join('');
+}
+onSSE('alert',function(){load();});
+load();
+</script>
+{% endblock %}

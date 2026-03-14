@@ -1,0 +1,88 @@
+{% extends "_base.html" %}
+{% block title %}Medications — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">💊 Medications</div>
+      <div class="page-subtitle">Track medications, dosages, and adherence</div>
+    </div>
+    <button class="btn btn-primary" onclick="showAddModal()">+ Add Medication</button>
+  </div>
+  <div class="grid-4" id="medStats" style="margin-bottom:18px;"></div>
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header"><div class="card-title">Active Medications</div></div>
+      <div id="medList"></div>
+      <div class="empty" id="medEmpty"><div class="empty-icon">💊</div><p>No medications added yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">Today's Log</div></div>
+      <div id="logList" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="empty" id="logEmpty"><div class="empty-icon">📋</div><p>No medication events today.</p></div>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div class="modal-title">Add Medication</div>
+    <div class="form-group"><label class="form-label">Medication Name</label><input class="form-input" id="mName" placeholder="e.g. Aspirin"></div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Dosage</label><input class="form-input" id="mDosage" placeholder="e.g. 100mg"></div>
+      <div class="form-group"><label class="form-label">Times (comma separated)</label><input class="form-input" id="mTimes" placeholder="e.g. 08:00, 20:00"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="mNotes" placeholder="e.g. Take with food"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="hideAddModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addMed()">Add</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var meds=[], logs=[];
+async function load() {
+  meds = await fetch('/api/medications').then(function(r){return r.json();});
+  logs = await fetch('/api/med-log/today').then(function(r){return r.json();});
+  render();
+}
+function render() {
+  var taken=0, missed=0, pending=0;
+  logs.forEach(function(l){if(l.status==='taken')taken++;else if(l.status==='missed')missed++;});
+  var totalDoses=0; meds.forEach(function(m){totalDoses+=m.times.split(',').length;});
+  pending = totalDoses - taken - missed;
+  if(pending<0) pending=0;
+  document.getElementById('medStats').innerHTML=[
+    {icon:'💊',num:meds.length,label:'Medications',color:'var(--blue)'},
+    {icon:'✅',num:taken,label:'Taken Today',color:'var(--green)'},
+    {icon:'❌',num:missed,label:'Missed Today',color:'var(--red)'},
+    {icon:'⏳',num:pending,label:'Pending',color:'var(--orange)'},
+  ].map(function(s){return '<div class="stat"><div class="stat-icon">'+s.icon+'</div><div class="stat-num" style="color:'+(s.num>0?s.color:'var(--muted)')+'">'+s.num+'</div><div class="stat-label">'+s.label+'</div></div>';}).join('');
+  var ml=document.getElementById('medList'), me=document.getElementById('medEmpty');
+  if(!meds.length){ml.innerHTML='';me.style.display='block';}
+  else{me.style.display='none';ml.innerHTML=meds.map(function(m){
+    var times=m.times.split(',').map(function(t){return t.trim();});
+    var btns=times.map(function(t){return '<button class="btn btn-sm" style="margin:2px;" onclick="logMed('+m.id+',\'taken\',\''+t+'\')">✅ '+t+'</button><button class="btn btn-sm btn-danger" style="margin:2px;" onclick="logMed('+m.id+',\'missed\',\''+t+'\')">❌</button>';}).join(' ');
+    return '<div style="padding:12px 0;border-bottom:1px solid var(--border);"><div style="display:flex;justify-content:space-between;align-items:flex-start;"><div><div style="font-weight:600;">'+m.name+' <span style="color:var(--muted);font-weight:400;">'+m.dosage+'</span></div><div style="font-size:12px;color:var(--muted);margin-top:2px;">Times: '+m.times+(m.notes?' · '+m.notes:'')+'</div></div><button class="btn btn-ghost btn-sm" onclick="delMed('+m.id+')">x</button></div><div style="margin-top:8px;">'+btns+'</div></div>';
+  }).join('');}
+  var ll=document.getElementById('logList'), le=document.getElementById('logEmpty');
+  if(!logs.length){ll.innerHTML='';le.style.display='block';}
+  else{le.style.display='none';ll.innerHTML=logs.map(function(l){
+    var icon=l.status==='taken'?'✅':'❌';
+    return '<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;"><span>'+icon+'</span><div><div style="font-size:13px;">'+(l.med_name||'Unknown')+' — '+l.status+'</div><div style="font-size:11px;color:var(--muted);">'+l.time+(l.scheduled_time?' (scheduled: '+l.scheduled_time+')':'')+'</div></div></div>';
+  }).join('');}
+}
+function showAddModal(){document.getElementById('addModal').classList.add('show');}
+function hideAddModal(){document.getElementById('addModal').classList.remove('show');}
+async function addMed(){
+  var d={name:document.getElementById('mName').value.trim(),dosage:document.getElementById('mDosage').value.trim(),times:document.getElementById('mTimes').value.trim(),notes:document.getElementById('mNotes').value.trim()};
+  if(!d.name)return alert('Enter a name');
+  await fetch('/api/medications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  hideAddModal();['mName','mDosage','mTimes','mNotes'].forEach(function(id){document.getElementById(id).value='';});load();
+}
+async function delMed(id){if(!confirm('Remove?'))return;await fetch('/api/medications/'+id,{method:'DELETE'});load();}
+async function logMed(id,status,time){await fetch('/api/medications/'+id+'/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,scheduled_time:time})});load();}
+load();
+</script>
+{% endblock %}

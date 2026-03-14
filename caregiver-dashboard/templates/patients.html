@@ -1,0 +1,144 @@
+{% extends "_base.html" %}
+{% block title %}Patients — Reachy Care{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">👥 Patients</div>
+      <div class="page-subtitle">Manage patient profiles and view their status</div>
+    </div>
+    <button class="btn btn-primary" onclick="showAddModal()">+ Add Patient</button>
+  </div>
+
+  <div class="grid-4" id="patientStats" style="margin-bottom:20px;"></div>
+
+  <div class="card">
+    <table class="table" id="patientTable">
+      <thead>
+        <tr>
+          <th>Patient</th>
+          <th>Room</th>
+          <th>Mood</th>
+          <th>Last Active</th>
+          <th>Alerts</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="patientBody"></tbody>
+    </table>
+    <div class="empty" id="emptyPatients">
+      <div class="empty-icon">👥</div>
+      <p>No patients added yet. Click "Add Patient" to get started.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Add Patient Modal -->
+<div class="modal-overlay" id="addModal">
+  <div class="modal">
+    <div class="modal-title">Add New Patient</div>
+    <div class="form-group">
+      <label class="form-label">Full Name</label>
+      <input class="form-input" id="pName" placeholder="e.g. Margaret Johnson">
+    </div>
+    <div class="grid-2">
+      <div class="form-group">
+        <label class="form-label">Room / Location</label>
+        <input class="form-input" id="pRoom" placeholder="e.g. Room 204">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Age</label>
+        <input class="form-input" id="pAge" type="number" placeholder="e.g. 78">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Conditions / Notes</label>
+      <textarea class="form-input" id="pNotes" placeholder="e.g. Mild dementia, diabetes"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Emergency Contact</label>
+      <input class="form-input" id="pContact" placeholder="e.g. Son - John - 555-1234">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="hideAddModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addPatient()">Add Patient</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let patients = [];
+
+async function loadPatients() {
+  try { patients = await fetch('/api/patients').then(r=>r.json()); } catch(e) { patients=[]; }
+  render();
+}
+
+function render() {
+  var body = document.getElementById('patientBody');
+  var empty = document.getElementById('emptyPatients');
+  var stats = document.getElementById('patientStats');
+
+  var total = patients.length;
+  var active = patients.filter(function(p){return p.status==='active';}).length;
+  var alertCount = patients.reduce(function(s,p){return s+(p.alerts_today||0);},0);
+  var needsAtt = patients.filter(function(p){return (p.alerts_today||0)>0;}).length;
+
+  stats.innerHTML = [
+    {icon:'👥',num:total,label:'Total Patients',color:'var(--blue)'},
+    {icon:'✅',num:active,label:'Active Now',color:'var(--green)'},
+    {icon:'⚠️',num:alertCount,label:'Alerts Today',color:'var(--orange)'},
+    {icon:'🔔',num:needsAtt,label:'Need Attention',color:'var(--red)'},
+  ].map(function(s){return '<div class="stat"><div class="stat-icon">'+s.icon+'</div><div class="stat-num" style="color:'+(s.num>0?s.color:'var(--muted)')+'">'+s.num+'</div><div class="stat-label">'+s.label+'</div></div>';}).join('');
+
+  if (!patients.length) { body.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+
+  body.innerHTML = patients.map(function(p) {
+    var moodColors = {joy:'green',sadness:'blue',anger:'red',fear:'purple',neutral:'muted',unknown:'muted'};
+    var mc = moodColors[p.mood] || 'muted';
+    return '<tr>'
+      +'<td><div style="font-weight:500;">'+p.name+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);">'+(p.age?p.age+' yrs ':' ')+(p.conditions?p.conditions.substring(0,30):'')+'</div></td>'
+      +'<td>'+(p.room||'—')+'</td>'
+      +'<td><span class="badge badge-'+mc+'">'+(p.mood||'unknown')+'</span></td>'
+      +'<td style="font-size:13px;color:var(--muted);">'+(p.last_active||'Never')+'</td>'
+      +'<td>'+((p.alerts_today||0)>0?'<span class="badge badge-red">'+p.alerts_today+'</span>':'<span style="color:var(--muted)">0</span>')+'</td>'
+      +'<td><span class="badge badge-'+(p.status==='active'?'green':'muted')+'">'+(p.status||'inactive')+'</span></td>'
+      +'<td><button class="btn btn-ghost btn-sm" onclick="removePatient('+p.id+')">x</button></td>'
+      +'</tr>';
+  }).join('');
+}
+
+function showAddModal() { document.getElementById('addModal').classList.add('show'); }
+function hideAddModal() { document.getElementById('addModal').classList.remove('show'); }
+
+async function addPatient() {
+  var data = {
+    name: document.getElementById('pName').value.trim(),
+    room: document.getElementById('pRoom').value.trim(),
+    age: parseInt(document.getElementById('pAge').value) || null,
+    conditions: document.getElementById('pNotes').value.trim(),
+    emergency_contact: document.getElementById('pContact').value.trim(),
+  };
+  if (!data.name) return alert('Please enter a name');
+  await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  hideAddModal();
+  ['pName','pRoom','pAge','pNotes','pContact'].forEach(function(id){document.getElementById(id).value='';});
+  loadPatients();
+}
+
+async function removePatient(id) {
+  if (!confirm('Remove this patient?')) return;
+  await fetch('/api/patients/'+id,{method:'DELETE'});
+  loadPatients();
+}
+
+onSSE('status', function() { loadPatients(); });
+loadPatients();
+</script>
+{% endblock %}

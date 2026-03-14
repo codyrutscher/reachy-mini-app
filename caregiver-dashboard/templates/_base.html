@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}Reachy Care{% endblock %}</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --card2: #1e2130; --border: #2a2d3a;
+    --text: #e4e4e7; --muted: #8b8d97; --input-bg: #252836;
+    --red: #ef4444; --orange: #f97316; --yellow: #eab308;
+    --blue: #3b82f6; --green: #22c55e; --purple: #a855f7; --cyan: #06b6d4;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Navbar */
+  .nav { background: var(--card); border-bottom: 1px solid var(--border);
+    padding: 0 24px; display: flex; align-items: center; height: 52px;
+    position: sticky; top: 0; z-index: 100; }
+  .nav-brand { font-size: 17px; font-weight: 600; margin-right: 32px; display: flex; align-items: center; gap: 8px; }
+  .nav-brand span { color: var(--blue); }
+  .nav-links { display: flex; gap: 4px; flex: 1; }
+  .nav-link { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    color: var(--muted); cursor: pointer; transition: all 0.2s; text-decoration: none; }
+  .nav-link:hover { background: var(--card2); color: var(--text); text-decoration: none; }
+  .nav-link.active { background: var(--blue); color: white; }
+  .nav-right { display: flex; align-items: center; gap: 12px; }
+  .nav-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .nav-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .nav-dot.off { background: var(--red); animation: none; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Page container */
+  .page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .page-title { font-size: 20px; font-weight: 600; }
+  .page-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .card-title { font-size: 14px; font-weight: 600; }
+  .card-muted { font-size: 12px; color: var(--muted); }
+
+  /* Buttons */
+  .btn { padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); transition: all 0.2s; }
+  .btn-primary { background: var(--blue); border-color: var(--blue); color: white; }
+  .btn-primary:hover { opacity: 0.9; }
+  .btn-ghost { background: transparent; color: var(--muted); }
+  .btn-ghost:hover { background: var(--card2); color: var(--text); }
+  .btn-danger { background: transparent; border-color: var(--red); color: var(--red); }
+  .btn-danger:hover { background: var(--red); color: white; }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  /* Tables */
+  .table { width: 100%; border-collapse: collapse; }
+  .table th { text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .table td { padding: 12px 14px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .table tr:hover td { background: var(--card2); }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+  .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+  .badge-orange { background: rgba(249,115,22,0.15); color: var(--orange); }
+  .badge-purple { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .badge-muted { background: rgba(139,141,151,0.15); color: var(--muted); }
+
+  /* Grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+
+  /* Stat cards */
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; text-align: center; }
+  .stat-icon { font-size: 24px; }
+  .stat-num { font-size: 24px; font-weight: 700; margin: 4px 0; }
+  .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Forms */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .form-input { width: 100%; background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 14px; border-radius: 8px; font-size: 14px; outline: none; }
+  .form-input:focus { border-color: var(--blue); }
+  .form-input::placeholder { color: var(--muted); }
+  select.form-input { appearance: none; cursor: pointer; }
+  textarea.form-input { resize: vertical; min-height: 80px; }
+
+  /* Modal */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200;
+    display: none; align-items: center; justify-content: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; width: 90%; max-width: 480px; }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 50px 20px; color: var(--muted); }
+  .empty-icon { font-size: 40px; margin-bottom: 8px; }
+
+  @media (max-width: 800px) {
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+    .nav-links { overflow-x: auto; }
+  }
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-brand">🤖 <span>Reachy</span> Care</div>
+  <div class="nav-links">
+    <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">📊 Dashboard</a>
+    <a href="/patients" class="nav-link {% if active_page == 'patients' %}active{% endif %}">👥 Patients</a>
+    <a href="/medications" class="nav-link {% if active_page == 'medications' %}active{% endif %}">💊 Medications</a>
+    <a href="/schedule" class="nav-link {% if active_page == 'schedule' %}active{% endif %}">📅 Schedule</a>
+    <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">📈 History</a>
+    <a href="/reports" class="nav-link {% if active_page == 'reports' %}active{% endif %}">📝 Reports</a>
+    <a href="/activity" class="nav-link {% if active_page == 'activity' %}active{% endif %}">📋 Activity</a>
+    <a href="/facilities" class="nav-link {% if active_page == 'facilities' %}active{% endif %}">🏥 Facilities</a>
+    <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">⚙️ Settings</a>
+  </div>
+  <div class="nav-right">
+    <div class="nav-status">
+      <div class="nav-dot" id="navDot"></div>
+      <span id="navConn">Connected</span>
+    </div>
+  </div>
+</nav>
+
+{% block body %}{% endblock %}
+
+<script>
+// Shared SSE connection for all pages
+let _es = null;
+const _handlers = {};
+
+function onSSE(event, fn) {
+  if (!_handlers[event]) _handlers[event] = [];
+  _handlers[event].push(fn);
+}
+
+function connectSSE() {
+  _es = new EventSource('/stream');
+  _es.onopen = () => {
+    document.getElementById('navDot').className = 'nav-dot';
+    document.getElementById('navConn').textContent = 'Connected';
+  };
+  _es.onerror = () => {
+    document.getElementById('navDot').className = 'nav-dot off';
+    document.getElementById('navConn').textContent = 'Reconnecting...';
+  };
+  ['alert','conversation','message_sent','status'].forEach(evt => {
+    _es.addEventListener(evt, e => {
+      const data = JSON.parse(e.data);
+      (_handlers[evt] || []).forEach(fn => fn(data));
+    });
+  });
+}
+connectSSE();
+
+if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

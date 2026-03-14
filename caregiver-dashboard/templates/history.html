@@ -1,0 +1,160 @@
+{% extends "_base.html" %}
+{% block title %}History — Reachy Care{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📈 History</div>
+      <div class="page-subtitle">Mood trends, check-in results, and conversation archive</div>
+    </div>
+  </div>
+
+  <!-- Mood timeline -->
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">
+      <div class="card-title">😊 Mood Timeline</div>
+      <div class="card-muted" id="moodCount"></div>
+    </div>
+    <div id="moodTimeline" style="display:flex;gap:4px;flex-wrap:wrap;min-height:40px;"></div>
+    <div class="empty" id="moodEmpty" style="padding:20px;display:none;">
+      <p>No mood data yet. Moods are tracked during conversations.</p>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:16px;">
+    <!-- Check-in history -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📋 Check-in History</div>
+      </div>
+      <div id="checkinList"></div>
+      <div class="empty" id="checkinEmpty" style="padding:20px;">
+        <p>No check-ins recorded yet.</p>
+      </div>
+    </div>
+
+    <!-- Alert history -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⚠️ Alert History</div>
+      </div>
+      <div id="alertHistory" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="empty" id="alertEmpty" style="padding:20px;">
+        <p>No alerts recorded yet.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversation archive -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">💬 Conversation Archive</div>
+      <div class="card-muted" id="convoCount"></div>
+    </div>
+    <div id="convoArchive" style="max-height:500px;overflow-y:auto;"></div>
+    <div class="empty" id="convoEmpty" style="padding:20px;">
+      <p>No conversations recorded yet.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const MOOD_COLORS = {
+  joy:'var(--green)', sadness:'var(--blue)', anger:'var(--red)',
+  fear:'var(--purple)', surprise:'var(--yellow)', neutral:'var(--muted)',
+  disgust:'var(--orange)', unknown:'var(--muted)',
+};
+const ALERT_ICONS = {
+  CRISIS:'🚨', EMERGENCY:'🆘', MEDICATION_REQUEST:'💊', FOOD_REQUEST:'🍽️',
+  HELP_REQUEST:'🙋', SUSTAINED_DISTRESS:'😢', CHECKIN_CONCERN:'📋', INFO:'ℹ️',
+};
+
+async function loadAll() {
+  const [moods, checkins, alerts, convo] = await Promise.all([
+    fetch('/api/mood-history').then(r=>r.json()),
+    fetch('/api/checkin-history').then(r=>r.json()),
+    fetch('/api/alerts').then(r=>r.json()),
+    fetch('/api/conversation').then(r=>r.json()),
+  ]);
+
+  // Mood timeline
+  const moodEl = document.getElementById('moodTimeline');
+  document.getElementById('moodCount').textContent = `${moods.length} entries`;
+  if (!moods.length) { document.getElementById('moodEmpty').style.display='block'; }
+  else {
+    document.getElementById('moodEmpty').style.display='none';
+    moodEl.innerHTML = moods.map(m => {
+      const c = MOOD_COLORS[m.mood]||'var(--muted)';
+      return `<div title="${m.mood} at ${m.time}" style="
+        width:28px;height:28px;border-radius:6px;background:${c};opacity:0.7;
+        display:flex;align-items:center;justify-content:center;font-size:12px;cursor:default;
+      ">${m.mood[0].toUpperCase()}</div>`;
+    }).join('');
+  }
+
+  // Check-ins
+  const ciEl = document.getElementById('checkinList');
+  if (!checkins.length) { document.getElementById('checkinEmpty').style.display='block'; }
+  else {
+    document.getElementById('checkinEmpty').style.display='none';
+    ciEl.innerHTML = checkins.map(ci => {
+      const results = ci.results;
+      const items = Object.entries(results).map(([k,v]) => {
+        const color = v==='good'?'green':v==='bad'?'red':'muted';
+        return `<span class="badge badge-${color}" style="margin:2px;">${k}: ${v}</span>`;
+      }).join(' ');
+      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${ci.time}</div>
+        <div>${items}</div>
+      </div>`;
+    }).join('');
+  }
+
+  // Alert history
+  const ahEl = document.getElementById('alertHistory');
+  if (!alerts.length) { document.getElementById('alertEmpty').style.display='block'; }
+  else {
+    document.getElementById('alertEmpty').style.display='none';
+    ahEl.innerHTML = alerts.map(a => `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;">
+      <span style="font-size:18px;">${ALERT_ICONS[a.type]||'ℹ️'}</span>
+      <div style="flex:1;">
+        <div style="font-size:13px;">${a.message}</div>
+        ${a.user_said?`<div style="font-size:12px;color:var(--muted);font-style:italic;">"${a.user_said}"</div>`:''}
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${a.time}</div>
+      </div>
+    </div>`).join('');
+  }
+
+  // Conversation archive
+  const cvEl = document.getElementById('convoArchive');
+  document.getElementById('convoCount').textContent = `${convo.length} messages`;
+  if (!convo.length) { document.getElementById('convoEmpty').style.display='block'; }
+  else {
+    document.getElementById('convoEmpty').style.display='none';
+    cvEl.innerHTML = convo.map(c => {
+      const isPatient = c.speaker==='patient';
+      const isCg = c.speaker==='caregiver';
+      const bg = isPatient?'var(--input-bg)':isCg?'var(--green)':'var(--blue)';
+      const fg = isPatient?'var(--text)':'white';
+      const align = isPatient?'flex-start':'flex-end';
+      const who = isPatient?'🎙️ Patient':isCg?'👨‍⚕️ Caregiver':'🤖 Reachy';
+      return `<div style="display:flex;justify-content:${align};margin:4px 0;">
+        <div style="max-width:70%;background:${bg};color:${fg};padding:8px 12px;border-radius:12px;font-size:13px;">
+          <div style="font-size:10px;opacity:0.6;margin-bottom:2px;">${who} · ${c.time}</div>
+          ${c.text}
+        </div>
+      </div>`;
+    }).join('');
+    cvEl.scrollTop = cvEl.scrollHeight;
+  }
+}
+
+onSSE('conversation', () => loadAll());
+onSSE('alert', () => loadAll());
+onSSE('status', () => loadAll());
+loadAll();
+</script>
+{% endblock %}

@@ -1,0 +1,256 @@
+{% extends "_base.html" %}
+{% block title %}Dashboard — Reachy Care{% endblock %}
+
+{% block extra_css %}
+<style>
+  .dash-layout { display: grid; grid-template-columns: 1fr 380px; gap: 0;
+    min-height: calc(100vh - 52px); }
+  .dash-main { padding: 20px; overflow-y: auto; max-height: calc(100vh - 52px); }
+  .dash-sidebar { background: var(--card); border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; max-height: calc(100vh - 52px); }
+  .sidebar-head { padding: 14px 16px; border-bottom: 1px solid var(--border);
+    font-size: 14px; font-weight: 600; }
+  .convo { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex;
+    flex-direction: column; gap: 8px; }
+  .bubble { max-width: 85%; padding: 10px 14px; border-radius: 14px;
+    font-size: 13px; line-height: 1.4; }
+  .bubble.patient { background: var(--input-bg); align-self: flex-start;
+    border-bottom-left-radius: 4px; }
+  .bubble.reachy { background: var(--blue); color: white; align-self: flex-end;
+    border-bottom-right-radius: 4px; opacity: 0.85; }
+  .bubble.caregiver { background: var(--green); color: var(--bg); align-self: flex-end;
+    border-bottom-right-radius: 4px; }
+  .bubble .who { font-size: 10px; opacity: 0.6; margin-bottom: 2px; }
+  .bubble .btime { font-size: 10px; opacity: 0.5; margin-top: 3px; }
+  .msg-area { border-top: 1px solid var(--border); padding: 12px 16px; }
+  .quick-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .qbtn { background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+    padding: 6px 12px; border-radius: 16px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .qbtn:hover { border-color: var(--blue); background: var(--card2); }
+  .msg-row { display: flex; gap: 8px; }
+  .msg-input { flex: 1; background: var(--input-bg); border: 1px solid var(--border);
+    color: var(--text); padding: 10px 14px; border-radius: 10px; font-size: 14px; outline: none; }
+  .msg-input:focus { border-color: var(--blue); }
+  .msg-input::placeholder { color: var(--muted); }
+  .btn-send { background: var(--blue); border: none; color: white; padding: 10px 18px;
+    border-radius: 10px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .btn-send:hover { opacity: 0.9; }
+  .patient-bar { background: var(--card2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 16px; }
+  .patient-bar .avatar { width: 42px; height: 42px; border-radius: 50%; background: var(--blue);
+    display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+  .patient-bar .info { flex: 1; }
+  .patient-bar .pname { font-weight: 600; font-size: 15px; }
+  .patient-bar .detail { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .alert-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 8px; transition: all 0.3s; }
+  .alert-card.acked { opacity: 0.4; }
+  .btn-ack { margin-top: 6px; background: transparent; border: 1px solid var(--border);
+    color: var(--green); padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; }
+  .btn-ack:hover { background: var(--green); color: var(--bg); }
+  @media (max-width: 800px) {
+    .dash-layout { grid-template-columns: 1fr; }
+    .dash-sidebar { max-height: 50vh; }
+  }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="dash-layout">
+  <div class="dash-main">
+    <div class="patient-bar" id="patientBar">
+      <div class="avatar">👤</div>
+      <div class="info">
+        <div class="pname" id="patientName">Patient</div>
+        <div class="detail" id="patientDetail">Waiting for session...</div>
+      </div>
+      <div id="moodBadge"></div>
+    </div>
+    <div class="grid-4" id="stats" style="margin-bottom:18px;"></div>
+    <div class="grid-2" style="margin-bottom:18px;">
+      <div class="card" style="padding:10px;">
+        <div class="card-header" style="margin-bottom:8px;"><div class="card-title">📷 Live Camera</div>
+          <div class="card-muted" id="camStatus">Connecting...</div></div>
+        <div style="position:relative;background:#000;border-radius:8px;overflow:hidden;min-height:200px;">
+          <img id="camStream" src="http://localhost:5556/stream" alt="Reachy camera feed"
+            style="width:100%;display:block;border-radius:8px;"
+            onerror="this.style.display='none';document.getElementById('camOff').style.display='flex';document.getElementById('camStatus').textContent='Offline';"
+            onload="document.getElementById('camOff').style.display='none';this.style.display='block';document.getElementById('camStatus').textContent='Live';">
+          <div id="camOff" style="display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);font-size:13px;">
+            📷 Camera offline — start Reachy to enable
+          </div>
+        </div>
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span style="font-size:14px;color:var(--muted);font-weight:500;">Alerts</span>
+          <button class="btn btn-ghost btn-sm" onclick="clearAcked()">Clear Acknowledged</button>
+        </div>
+        <div id="alertList" style="max-height:300px;overflow-y:auto;"></div>
+        <div class="empty" id="emptyAlerts" style="padding:30px 10px;">
+          <div class="empty-icon">✅</div>
+          <p>No alerts yet. Reachy is keeping watch.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-sidebar">
+    <div class="sidebar-head">💬 Live Conversation</div>
+    <div class="convo" id="convo">
+      <div class="empty" style="padding:30px 10px;">
+        <div class="empty-icon">🎙️</div>
+        <p style="font-size:13px;">Conversation will appear here once the patient starts talking.</p>
+      </div>
+    </div>
+    <div class="msg-area">
+      <div class="quick-btns">
+        <button class="qbtn" onclick="quickMsg('Your medication is on the way!')">💊 Medication coming</button>
+        <button class="qbtn" onclick="quickMsg('Food will be ready soon!')">🍽️ Food coming</button>
+        <button class="qbtn" onclick="quickMsg('I will be there in a few minutes.')">🚶 On my way</button>
+        <button class="qbtn" onclick="quickMsg('How are you feeling right now?')">❤️ Check in</button>
+        <button class="qbtn" onclick="quickMsg('I love you. Everything is going to be okay.')">🤗 Comfort</button>
+      </div>
+      <div class="msg-row">
+        <input class="msg-input" id="msgInput" placeholder="Type a message for Reachy to say..."
+               onkeydown="if(event.key==='Enter')sendMsg()" aria-label="Message to patient">
+        <button class="btn-send" onclick="sendMsg()">Send</button>
+      </div>
+      <button onclick="triggerSOS()" style="width:100%;margin-top:8px;padding:10px;background:var(--red);border:none;color:white;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">🚨 Emergency SOS</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const TYPE_CFG = {
+  CRISIS:{color:'var(--red)',icon:'🚨',label:'Crisis'},
+  EMERGENCY:{color:'var(--red)',icon:'🆘',label:'Emergency'},
+  MEDICATION_REQUEST:{color:'var(--orange)',icon:'💊',label:'Medication'},
+  FOOD_REQUEST:{color:'var(--yellow)',icon:'🍽️',label:'Food'},
+  HELP_REQUEST:{color:'var(--blue)',icon:'🙋',label:'Help'},
+  SUSTAINED_DISTRESS:{color:'var(--purple)',icon:'😢',label:'Distress'},
+  CHECKIN_CONCERN:{color:'var(--orange)',icon:'📋',label:'Check-in'},
+  INFO:{color:'var(--muted)',icon:'ℹ️',label:'Info'},
+};
+const MOOD_COLORS = {
+  joy:'var(--green)',sadness:'var(--blue)',anger:'var(--red)',
+  fear:'var(--purple)',surprise:'var(--yellow)',neutral:'var(--muted)',unknown:'var(--muted)',
+};
+
+let alerts=[], convo=[];
+function cfg(t){return TYPE_CFG[t]||TYPE_CFG.INFO;}
+
+function renderStats(){
+  const counts={};
+  alerts.filter(a=>!a.acknowledged).forEach(a=>{counts[a.type]=(counts[a.type]||0)+1;});
+  const types=['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST'];
+  document.getElementById('stats').innerHTML=types.map(t=>{
+    const c=cfg(t),n=counts[t]||0;
+    return `<div class="stat" style="${n?'border-color:'+c.color:''}">
+      <div class="stat-icon">${c.icon}</div>
+      <div class="stat-num" style="color:${n?c.color:'var(--muted)'}">${n}</div>
+      <div class="stat-label">${c.label}</div></div>`;
+  }).join('');
+}
+
+function renderAlerts(){
+  const el=document.getElementById('alertList');
+  const empty=document.getElementById('emptyAlerts');
+  if(!alerts.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=alerts.map(a=>{
+    const c=cfg(a.type);
+    return `<div class="alert-card ${a.acknowledged?'acked':''}" style="border-color:${a.acknowledged?'var(--border)':c.color}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <span style="font-size:22px;">${c.icon}</span>
+          <div>
+            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:${c.color}">${c.label}</div>
+            <div style="font-size:14px;margin:3px 0;">${a.message}</div>
+            ${a.user_said?`<div style="font-size:12px;color:var(--muted);font-style:italic;">"${a.user_said}"</div>`:''}
+            ${a.details?`<div style="font-size:11px;color:var(--muted);margin-top:3px;">${a.details}</div>`:''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:10px;">
+          <div style="font-size:11px;color:var(--muted);">${a.time}</div>
+          ${!a.acknowledged?`<button class="btn-ack" onclick="ack(${a.id})">✓ Ack</button>`
+            :'<span style="font-size:11px;color:var(--green)">✓</span>'}
+        </div>
+      </div></div>`;
+  }).join('');
+}
+
+function renderConvo(){
+  const el=document.getElementById('convo');
+  if(!convo.length) return;
+  el.innerHTML=convo.map(c=>{
+    const cls=c.speaker==='patient'?'patient':c.speaker==='caregiver'?'caregiver':'reachy';
+    const who=c.speaker==='patient'?'🎙️ Patient':c.speaker==='caregiver'?'👨‍⚕️ Caregiver':'🤖 Reachy';
+    return `<div class="bubble ${cls}"><div class="who">${who}</div>${c.text}<div class="btime">${c.time}</div></div>`;
+  }).join('');
+  el.scrollTop=el.scrollHeight;
+}
+
+function updatePatientBar(s){
+  if(s.name) document.getElementById('patientName').textContent=s.name;
+  const parts=[];
+  if(s.last_active) parts.push(`Last active: ${s.last_active}`);
+  if(s.last_said) parts.push(`"${s.last_said.substring(0,40)}${s.last_said.length>40?'...':''}"`);
+  document.getElementById('patientDetail').textContent=parts.join(' · ')||'Session active';
+  if(s.mood&&s.mood!=='unknown'){
+    const mc=MOOD_COLORS[s.mood]||'var(--muted)';
+    document.getElementById('moodBadge').innerHTML=
+      `<span class="badge" style="background:${mc};color:var(--bg);padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;">${s.mood}</span>`;
+  }
+}
+
+async function ack(id){
+  await fetch(`/api/alerts/${id}/ack`,{method:'POST'});
+  const a=alerts.find(x=>x.id===id);if(a)a.acknowledged=true;
+  renderStats();renderAlerts();
+}
+async function clearAcked(){
+  await fetch('/api/alerts/clear',{method:'POST'});
+  alerts=alerts.filter(a=>!a.acknowledged);
+  renderStats();renderAlerts();
+}
+async function sendMsg(){
+  const input=document.getElementById('msgInput');
+  const text=input.value.trim();if(!text)return;input.value='';
+  await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text,priority:'normal'})});
+}
+function quickMsg(text){
+  fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text,priority:'normal'})});
+}
+function triggerSOS(){
+  if(!confirm('Send emergency SOS alert? This will notify all caregivers.'))return;
+  fetch('/api/alerts',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({type:'EMERGENCY',message:'SOS triggered from dashboard',details:'Caregiver pressed emergency button',user_said:''})});
+  fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({text:'Emergency! Your caregiver is on the way. Stay calm, help is coming.',priority:'urgent'})});
+}
+
+async function init(){
+  try{
+    const[aRes,cRes,sRes]=await Promise.all([
+      fetch('/api/alerts'),fetch('/api/conversation'),fetch('/api/status')]);
+    alerts=await aRes.json();convo=await cRes.json();
+    const status=await sRes.json();
+    renderStats();renderAlerts();renderConvo();updatePatientBar(status);
+  }catch(e){console.error(e);}
+}
+
+onSSE('alert',a=>{alerts.unshift(a);renderStats();renderAlerts();
+  if(['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST','HELP_REQUEST'].includes(a.type)&&Notification.permission==='granted')
+    new Notification(`Reachy: ${cfg(a.type).label}`,{body:a.message});
+});
+onSSE('conversation',c=>{convo.push(c);renderConvo();});
+onSSE('status',s=>{updatePatientBar(s);});
+
+init();
+</script>
+{% endblock %}

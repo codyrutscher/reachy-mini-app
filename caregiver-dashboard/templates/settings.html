@@ -1,0 +1,134 @@
+{% extends "_base.html" %}
+{% block title %}Settings — Reachy Care{% endblock %}
+
+{% block body %}
+<div class="page" style="max-width:700px;">
+  <div class="page-header">
+    <div>
+      <div class="page-title">⚙️ Settings</div>
+      <div class="page-subtitle">Configure alerts, notifications, and system preferences</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:14px;">🔔 Notification Preferences</div>
+    <div class="form-group">
+      <label class="form-label">Caregiver Email (for email alerts)</label>
+      <input class="form-input" id="cgEmail" placeholder="e.g. [email]">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Alert Sound</label>
+      <select class="form-input" id="alertSound">
+        <option value="on">Enabled</option>
+        <option value="off">Disabled</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Browser Notifications</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="badge" id="notifBadge">Checking...</span>
+        <button class="btn btn-ghost btn-sm" onclick="requestNotifs()">Enable</button>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="saveNotifs()">Save Notification Settings</button>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:14px;">🤖 Robot Connection</div>
+    <div class="form-group">
+      <label class="form-label">Dashboard URL (robot connects to this)</label>
+      <input class="form-input" value="http://localhost:5555" disabled>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">
+        Set DASHBOARD_URL environment variable on the robot to change this.
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-title" style="margin-bottom:14px;">🗄️ Database</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+      All data is stored in a local SQLite database (reachy.db).
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="exportData()">📥 Export Data</button>
+      <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear All Data</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title" style="margin-bottom:14px;">ℹ️ About</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.6;">
+      Reachy Care Dashboard v1.0<br>
+      Built for Reachy Mini accessibility assistant.<br>
+      Connects to the robot via REST API for real-time alerts and two-way communication.
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function checkNotifs() {
+  const badge = document.getElementById('notifBadge');
+  if (!('Notification' in window)) {
+    badge.className = 'badge badge-muted'; badge.textContent = 'Not supported';
+  } else if (Notification.permission === 'granted') {
+    badge.className = 'badge badge-green'; badge.textContent = 'Enabled';
+  } else if (Notification.permission === 'denied') {
+    badge.className = 'badge badge-red'; badge.textContent = 'Blocked';
+  } else {
+    badge.className = 'badge badge-orange'; badge.textContent = 'Not enabled';
+  }
+}
+
+function requestNotifs() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(checkNotifs);
+  }
+}
+
+async function saveNotifs() {
+  const email = document.getElementById('cgEmail').value.trim();
+  const sound = document.getElementById('alertSound').value;
+  await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email, alert_sound: sound})});
+  alert('Settings saved!');
+}
+
+async function exportData() {
+  const [alerts, convo, moods, checkins] = await Promise.all([
+    fetch('/api/alerts').then(r=>r.json()),
+    fetch('/api/conversation').then(r=>r.json()),
+    fetch('/api/mood-history').then(r=>r.json()),
+    fetch('/api/checkin-history').then(r=>r.json()),
+  ]);
+  const data = {alerts, conversation: convo, moods, checkins, exported: new Date().toISOString()};
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `reachy-export-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+async function clearAllData() {
+  if (!confirm('This will delete ALL alerts, conversations, and history. Are you sure?')) return;
+  if (!confirm('Really? This cannot be undone.')) return;
+  await fetch('/api/clear-all', {method:'POST'});
+  alert('All data cleared.');
+  location.reload();
+}
+
+// Load saved settings
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const s = await res.json();
+    if (s.email) document.getElementById('cgEmail').value = s.email;
+    if (s.alert_sound) document.getElementById('alertSound').value = s.alert_sound;
+  } catch(e) {}
+}
+
+checkNotifs();
+loadSettings();
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "_base.html" %}
+{% block title %}Reports — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📝 Daily Reports</div>
+      <div class="page-subtitle">Auto-generated summaries of patient care</div>
+    </div>
+    <button class="btn btn-primary" onclick="genReport()">Generate Today's Report</button>
+  </div>
+  <div id="reportList"></div>
+  <div class="empty" id="reportEmpty"><div class="empty-icon">📝</div><p>No reports yet. Click "Generate Today's Report" to create one.</p></div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var reports=[];
+async function load(){reports=await fetch('/api/reports').then(function(r){return r.json();});render();}
+function render(){
+  var el=document.getElementById('reportList'),empty=document.getElementById('reportEmpty');
+  if(!reports.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=reports.map(function(r){
+    var lines=r.report.split('\n');
+    var title=lines[0]||'Report';
+    var body=lines.slice(1).join('<br>');
+    return '<div class="card" style="margin-bottom:12px;"><div class="card-header"><div class="card-title">'+title+'</div><div class="card-muted">'+r.date+'</div></div><div style="font-size:14px;line-height:1.8;color:var(--muted);">'+body+'</div></div>';
+  }).join('');
+}
+async function genReport(){
+  var res=await fetch('/api/reports/generate',{method:'POST'});
+  var data=await res.json();
+  alert('Report generated!');load();
+}
+load();
+</script>
+{% endblock %}
