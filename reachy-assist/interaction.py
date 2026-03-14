@@ -48,6 +48,7 @@ class InteractionLoop:
         from music import MusicPlayer
         from exercises import GuidedExercises
         from stories import StoryReader
+        from meditation import MeditationGuide
 
         self.reminders = ReminderManager(on_reminder=self._on_reminder)
         self.checkin = DailyCheckIn()
@@ -57,6 +58,7 @@ class InteractionLoop:
         self.music = MusicPlayer()
         self.exercises = GuidedExercises()
         self.stories = StoryReader()
+        self.meditation = MeditationGuide()
 
         self._pending_reminder = None
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
@@ -291,6 +293,55 @@ class InteractionLoop:
             self._log_activity("hydration_reminder", "Set up water reminders")
             return "I've set up a daily water reminder for you. I'll remind you to drink water throughout the day!"
 
+        # ── News ───────────────────────────────────────────────────
+        if any(w in lower for w in ["news", "headlines", "what's happening",
+                                     "what's going on in the world", "read me the news",
+                                     "today's news"]):
+            from news import news_briefing
+            self._log_activity("news", "Patient asked for news")
+            return news_briefing()
+
+        # ── Meditation / mindfulness ───────────────────────────────
+        if any(w in lower for w in ["meditate", "meditation", "mindfulness",
+                                     "body scan", "peaceful place", "loving kindness",
+                                     "guided meditation", "mindful"]):
+            if self.meditation.is_active:
+                return self.meditation.next_step()
+            self.robot.perform("breathe")
+            self._log_activity("meditation_start", text)
+            return self.meditation.start(text)
+        if any(w in lower for w in ["list meditations", "what meditations",
+                                     "meditation options"]):
+            return self.meditation.list_sessions()
+        if lower in ["next", "continue", "go on", "keep going"] and self.meditation.is_active:
+            return self.meditation.next_step()
+
+        # ── Voice journal ──────────────────────────────────────────
+        if any(w in lower for w in ["start journal", "journal entry", "write in my journal",
+                                     "dear diary", "i want to journal", "voice journal"]):
+            from journal import start_journal
+            self._log_activity("journal_start", "Patient started journaling")
+            return start_journal()
+        if any(w in lower for w in ["save journal", "done journaling", "finish journal"]):
+            from journal import save_journal
+            return save_journal()
+        if any(w in lower for w in ["cancel journal", "discard journal", "nevermind journal"]):
+            from journal import cancel_journal
+            return cancel_journal()
+
+        # ── Date / time ───────────────────────────────────────────
+        if any(w in lower for w in ["what time is it", "what's the time", "tell me the time",
+                                     "current time"]):
+            from datetime_helper import get_time_response
+            return get_time_response()
+        if any(w in lower for w in ["what day is it", "what's the date", "what date",
+                                     "today's date", "what is today"]):
+            from datetime_helper import get_date_response
+            return get_date_response()
+        if any(w in lower for w in ["what day of the week", "is it monday", "is it friday"]):
+            from datetime_helper import get_day_response
+            return get_day_response()
+
         # ── Breathing exercise ─────────────────────────────────────
         if any(w in lower for w in ["breathing", "breathe", "calm down", "relax", "anxiety exercise"]):
             self.robot.perform("breathe")
@@ -358,6 +409,8 @@ class InteractionLoop:
                 return self.exercises.stop()
             if self.stories.is_active:
                 return self.stories.stop()
+            if self.meditation.is_active:
+                return self.meditation.stop()
 
         # ── Help ───────────────────────────────────────────────────
         if lower in ["help", "what can you do", "commands", "menu"]:
@@ -365,26 +418,25 @@ class InteractionLoop:
                 "Here's what I can do:\n"
                 "- Just chat with me about anything\n"
                 "- 'check-in' — daily wellness check\n"
-                "- 'remind me' — set medication or appointment reminders\n"
-                "- 'my reminders' — see your reminders\n"
+                "- 'remind me' — set reminders\n"
                 "- 'memory lane' — reminiscence therapy\n"
                 "- 'play a game' — brain games\n"
                 "- 'exercise' — guided physical exercises\n"
-                "- 'read me a story' — I'll read you a story\n"
-                "- 'tell me a joke' — I'll make you laugh\n"
-                "- 'affirmation' — daily positive message\n"
-                "- 'motivate me' — motivational quote\n"
-                "- 'let's chat' — fun conversation topics\n"
+                "- 'meditate' — guided meditation\n"
+                "- 'read me a story' — story time\n"
+                "- 'tell me a joke' — jokes\n"
+                "- 'news' — today's headlines\n"
+                "- 'journal' — voice journaling\n"
+                "- 'affirmation' — positive messages\n"
+                "- 'let's chat' — conversation topics\n"
                 "- 'add appointment' — track appointments\n"
-                "- 'my appointments' — see upcoming events\n"
-                "- 'breathing exercise' — guided relaxation\n"
+                "- 'breathing exercise' — relaxation\n"
                 "- 'play music' — melodies\n"
-                "- 'weather' — current weather report\n"
-                "- 'good morning' — morning greeting with weather\n"
-                "- 'goodnight' — bedtime (logs sleep)\n"
-                "- 'took my medication' — confirm meds taken\n"
-                "- 'sleep report' — sleep tracking info\n"
-                "- 'water reminder' — set hydration reminders\n"
+                "- 'weather' — current weather\n"
+                "- 'what time is it' / 'what day is it'\n"
+                "- 'good morning' / 'goodnight'\n"
+                "- 'took my medication' — confirm meds\n"
+                "- 'water reminder' — hydration\n"
                 "- 'dance' / 'stretch' / 'celebrate' / 'wiggle'\n"
                 "- 'stop' — end any active session\n"
                 "- 'help' — show this menu"
@@ -764,6 +816,17 @@ class InteractionLoop:
                 return self.exercises.stop()
             if self.stories.is_active:
                 return self.stories.stop()
+            if self.meditation.is_active:
+                return self.meditation.stop()
+
+        # Journal is special — all speech goes into the entry
+        from journal import is_active as journal_is_active, add_to_journal, save_journal, cancel_journal
+        if journal_is_active():
+            if any(w in lower for w in ["save journal", "done journaling", "finish journal"]):
+                return save_journal()
+            if any(w in lower for w in ["cancel journal", "discard journal"]):
+                return cancel_journal()
+            return add_to_journal(text)
 
         if self.checkin.is_active:
             result = self.checkin.process_answer(text)
@@ -793,6 +856,9 @@ class InteractionLoop:
             if any(w in lower for w in ["next", "continue", "go on", "keep going", "okay", "ok", "yes", "more"]):
                 return self.stories.next_page()
             return self.stories.next_page()
+
+        if self.meditation.is_active:
+            return self.meditation.next_step()
 
         if self.reminiscence.is_active:
             return self.reminiscence.continue_session(text)

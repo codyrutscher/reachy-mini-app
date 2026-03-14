@@ -142,6 +142,14 @@ def init_db():
             date TEXT NOT NULL,
             report TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS caregiver_notes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER DEFAULT 0,
+            note TEXT NOT NULL,
+            author TEXT DEFAULT '',
+            time TEXT NOT NULL
+        );
     """)
     # Initialize patient status defaults
     defaults = {"mood": "unknown", "last_active": "", "last_said": "",
@@ -620,3 +628,36 @@ def generate_daily_report():
     )
     add_daily_report(report, today)
     return report
+
+
+# ── Caregiver Notes ─────────────────────────────────────────────
+
+def add_note(note, author="", patient_id=0):
+    conn = _get_conn()
+    t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur = conn.execute(
+        "INSERT INTO caregiver_notes (patient_id, note, author, time) VALUES (?,?,?,?)",
+        (patient_id, note, author, t),
+    )
+    conn.commit()
+    return {"id": cur.lastrowid, "patient_id": patient_id, "note": note, "author": author, "time": t}
+
+
+def get_notes(patient_id=None, limit=50):
+    conn = _get_conn()
+    if patient_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM caregiver_notes WHERE patient_id=? ORDER BY id DESC LIMIT ?",
+            (patient_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM caregiver_notes ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_note(note_id):
+    conn = _get_conn()
+    conn.execute("DELETE FROM caregiver_notes WHERE id=?", (note_id,))
+    conn.commit()

@@ -169,6 +169,33 @@ function connectSSE() {
 }
 connectSSE();
 
+// Audio alert for critical events
+function playAlertSound() {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.frequency.value = 800; osc.type = 'sine';
+    gain.gain.value = 0.3;
+    osc.start(); osc.stop(ctx.currentTime + 0.15);
+    setTimeout(function(){
+      var osc2 = ctx.createOscillator();
+      var gain2 = ctx.createGain();
+      osc2.connect(gain2); gain2.connect(ctx.destination);
+      osc2.frequency.value = 1000; osc2.type = 'sine';
+      gain2.gain.value = 0.3;
+      osc2.start(); osc2.stop(ctx.currentTime + 0.15);
+    }, 200);
+  } catch(e) {}
+}
+
+onSSE('alert', function(a) {
+  if (['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST','HELP_REQUEST'].includes(a.type)) {
+    playAlertSound();
+  }
+});
+
 if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
 </script>
 {% block extra_js %}{% endblock %}

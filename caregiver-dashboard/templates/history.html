@@ -1,60 +1,62 @@
 {% extends "_base.html" %}
 {% block title %}History — Reachy Care{% endblock %}
-
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="page-title">📈 History</div>
-      <div class="page-subtitle">Mood trends, check-in results, and conversation archive</div>
+      <div class="page-title">📈 History & Trends</div>
+      <div class="page-subtitle">Mood patterns, check-in results, and caregiver notes</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <a href="/api/export/csv" class="btn btn-ghost btn-sm">📥 Export Activity CSV</a>
+      <a href="/api/export/alerts-csv" class="btn btn-ghost btn-sm">📥 Export Alerts CSV</a>
     </div>
   </div>
 
-  <!-- Mood timeline -->
-  <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">
-      <div class="card-title">😊 Mood Timeline</div>
-      <div class="card-muted" id="moodCount"></div>
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">😊 Mood Chart (Last 24h)</div></div>
+      <canvas id="moodChart" height="200"></canvas>
+      <div id="moodLegend" style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);"></div>
     </div>
-    <div id="moodTimeline" style="display:flex;gap:4px;flex-wrap:wrap;min-height:40px;"></div>
-    <div class="empty" id="moodEmpty" style="padding:20px;display:none;">
-      <p>No mood data yet. Moods are tracked during conversations.</p>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📊 Mood Summary</div></div>
+      <div id="moodSummary" style="padding:10px 0;"></div>
     </div>
   </div>
 
-  <div class="grid-2" style="margin-bottom:16px;">
-    <!-- Check-in history -->
+  <div class="grid-2" style="margin-bottom:18px;">
     <div class="card">
       <div class="card-header">
-        <div class="card-title">📋 Check-in History</div>
+        <div class="card-title">📝 Caregiver Notes</div>
+        <button class="btn btn-primary btn-sm" onclick="showNoteModal()">+ Add Note</button>
       </div>
-      <div id="checkinList"></div>
-      <div class="empty" id="checkinEmpty" style="padding:20px;">
-        <p>No check-ins recorded yet.</p>
-      </div>
+      <div id="notesList" style="max-height:350px;overflow-y:auto;"></div>
+      <div class="empty" id="notesEmpty"><div class="empty-icon">📝</div><p>No notes yet.</p></div>
     </div>
-
-    <!-- Alert history -->
     <div class="card">
-      <div class="card-header">
-        <div class="card-title">⚠️ Alert History</div>
-      </div>
-      <div id="alertHistory" style="max-height:400px;overflow-y:auto;"></div>
-      <div class="empty" id="alertEmpty" style="padding:20px;">
-        <p>No alerts recorded yet.</p>
-      </div>
+      <div class="card-header"><div class="card-title">📋 Check-in History</div></div>
+      <div id="checkinList" style="max-height:350px;overflow-y:auto;"></div>
+      <div class="empty" id="checkinEmpty"><div class="empty-icon">📋</div><p>No check-ins recorded yet.</p></div>
     </div>
   </div>
 
-  <!-- Conversation archive -->
   <div class="card">
-    <div class="card-header">
-      <div class="card-title">💬 Conversation Archive</div>
-      <div class="card-muted" id="convoCount"></div>
+    <div class="card-header"><div class="card-title">🕐 Mood Timeline</div></div>
+    <div id="moodTimeline" style="max-height:300px;overflow-y:auto;"></div>
+    <div class="empty" id="timelineEmpty"><div class="empty-icon">📈</div><p>No mood data yet.</p></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="noteModal">
+  <div class="modal">
+    <div class="modal-title">Add Caregiver Note</div>
+    <div class="form-group"><label class="form-label">Note</label>
+      <textarea class="form-input" id="noteText" rows="4" placeholder="Write your observation or note here..."></textarea>
     </div>
-    <div id="convoArchive" style="max-height:500px;overflow-y:auto;"></div>
-    <div class="empty" id="convoEmpty" style="padding:20px;">
-      <p>No conversations recorded yet.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="hideNoteModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNote()">Save Note</button>
     </div>
   </div>
 </div>
@@ -62,99 +64,113 @@
 
 {% block extra_js %}
 <script>
-const MOOD_COLORS = {
-  joy:'var(--green)', sadness:'var(--blue)', anger:'var(--red)',
-  fear:'var(--purple)', surprise:'var(--yellow)', neutral:'var(--muted)',
-  disgust:'var(--orange)', unknown:'var(--muted)',
-};
-const ALERT_ICONS = {
-  CRISIS:'🚨', EMERGENCY:'🆘', MEDICATION_REQUEST:'💊', FOOD_REQUEST:'🍽️',
-  HELP_REQUEST:'🙋', SUSTAINED_DISTRESS:'😢', CHECKIN_CONCERN:'📋', INFO:'ℹ️',
-};
+var moods=[], checkins=[], notes=[];
+var MOOD_COLORS={joy:'#22c55e',sadness:'#3b82f6',anger:'#ef4444',fear:'#a855f7',surprise:'#eab308',neutral:'#8b8d97',disgust:'#f97316',unknown:'#555'};
+var MOOD_EMOJI={joy:'😊',sadness:'😢',anger:'😠',fear:'😨',surprise:'😲',neutral:'😐',disgust:'🤢',unknown:'❓'};
 
-async function loadAll() {
-  const [moods, checkins, alerts, convo] = await Promise.all([
-    fetch('/api/mood-history').then(r=>r.json()),
-    fetch('/api/checkin-history').then(r=>r.json()),
-    fetch('/api/alerts').then(r=>r.json()),
-    fetch('/api/conversation').then(r=>r.json()),
-  ]);
-
-  // Mood timeline
-  const moodEl = document.getElementById('moodTimeline');
-  document.getElementById('moodCount').textContent = `${moods.length} entries`;
-  if (!moods.length) { document.getElementById('moodEmpty').style.display='block'; }
-  else {
-    document.getElementById('moodEmpty').style.display='none';
-    moodEl.innerHTML = moods.map(m => {
-      const c = MOOD_COLORS[m.mood]||'var(--muted)';
-      return `<div title="${m.mood} at ${m.time}" style="
-        width:28px;height:28px;border-radius:6px;background:${c};opacity:0.7;
-        display:flex;align-items:center;justify-content:center;font-size:12px;cursor:default;
-      ">${m.mood[0].toUpperCase()}</div>`;
-    }).join('');
-  }
-
-  // Check-ins
-  const ciEl = document.getElementById('checkinList');
-  if (!checkins.length) { document.getElementById('checkinEmpty').style.display='block'; }
-  else {
-    document.getElementById('checkinEmpty').style.display='none';
-    ciEl.innerHTML = checkins.map(ci => {
-      const results = ci.results;
-      const items = Object.entries(results).map(([k,v]) => {
-        const color = v==='good'?'green':v==='bad'?'red':'muted';
-        return `<span class="badge badge-${color}" style="margin:2px;">${k}: ${v}</span>`;
-      }).join(' ');
-      return `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:4px;">${ci.time}</div>
-        <div>${items}</div>
-      </div>`;
-    }).join('');
-  }
-
-  // Alert history
-  const ahEl = document.getElementById('alertHistory');
-  if (!alerts.length) { document.getElementById('alertEmpty').style.display='block'; }
-  else {
-    document.getElementById('alertEmpty').style.display='none';
-    ahEl.innerHTML = alerts.map(a => `<div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;">
-      <span style="font-size:18px;">${ALERT_ICONS[a.type]||'ℹ️'}</span>
-      <div style="flex:1;">
-        <div style="font-size:13px;">${a.message}</div>
-        ${a.user_said?`<div style="font-size:12px;color:var(--muted);font-style:italic;">"${a.user_said}"</div>`:''}
-        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${a.time}</div>
-      </div>
-    </div>`).join('');
-  }
-
-  // Conversation archive
-  const cvEl = document.getElementById('convoArchive');
-  document.getElementById('convoCount').textContent = `${convo.length} messages`;
-  if (!convo.length) { document.getElementById('convoEmpty').style.display='block'; }
-  else {
-    document.getElementById('convoEmpty').style.display='none';
-    cvEl.innerHTML = convo.map(c => {
-      const isPatient = c.speaker==='patient';
-      const isCg = c.speaker==='caregiver';
-      const bg = isPatient?'var(--input-bg)':isCg?'var(--green)':'var(--blue)';
-      const fg = isPatient?'var(--text)':'white';
-      const align = isPatient?'flex-start':'flex-end';
-      const who = isPatient?'🎙️ Patient':isCg?'👨‍⚕️ Caregiver':'🤖 Reachy';
-      return `<div style="display:flex;justify-content:${align};margin:4px 0;">
-        <div style="max-width:70%;background:${bg};color:${fg};padding:8px 12px;border-radius:12px;font-size:13px;">
-          <div style="font-size:10px;opacity:0.6;margin-bottom:2px;">${who} · ${c.time}</div>
-          ${c.text}
-        </div>
-      </div>`;
-    }).join('');
-    cvEl.scrollTop = cvEl.scrollHeight;
-  }
+async function load(){
+  moods=await fetch('/api/mood-history').then(r=>r.json());
+  checkins=await fetch('/api/checkin-history').then(r=>r.json());
+  notes=await fetch('/api/notes').then(r=>r.json());
+  renderMoodChart();renderMoodSummary();renderTimeline();renderCheckins();renderNotes();
 }
 
-onSSE('conversation', () => loadAll());
-onSSE('alert', () => loadAll());
-onSSE('status', () => loadAll());
-loadAll();
+function renderMoodChart(){
+  var canvas=document.getElementById('moodChart');
+  var ctx=canvas.getContext('2d');
+  var w=canvas.width=canvas.parentElement.clientWidth-40;
+  var h=canvas.height=200;
+  ctx.clearRect(0,0,w,h);
+  if(!moods.length){ctx.fillStyle='#8b8d97';ctx.font='14px sans-serif';ctx.fillText('No mood data yet',w/2-50,h/2);return;}
+  // Count moods
+  var counts={};
+  moods.forEach(function(m){counts[m.mood]=(counts[m.mood]||0)+1;});
+  var entries=Object.entries(counts).sort(function(a,b){return b[1]-a[1];});
+  var total=moods.length;
+  var barW=Math.min(60,w/entries.length-10);
+  var maxCount=Math.max.apply(null,entries.map(function(e){return e[1];}));
+  var legend=document.getElementById('moodLegend');
+  legend.innerHTML='';
+  entries.forEach(function(e,i){
+    var mood=e[0],count=e[1];
+    var barH=(count/maxCount)*(h-40);
+    var x=20+i*(barW+10);
+    var y=h-30-barH;
+    ctx.fillStyle=MOOD_COLORS[mood]||'#555';
+    ctx.beginPath();ctx.roundRect(x,y,barW,barH,4);ctx.fill();
+    ctx.fillStyle='#e4e4e7';ctx.font='bold 12px sans-serif';ctx.textAlign='center';
+    ctx.fillText(count,x+barW/2,y-5);
+    ctx.fillStyle='#8b8d97';ctx.font='11px sans-serif';
+    ctx.fillText(MOOD_EMOJI[mood]||mood,x+barW/2,h-10);
+    legend.innerHTML+='<span style="display:flex;align-items:center;gap:4px;"><span style="width:10px;height:10px;border-radius:50%;background:'+(MOOD_COLORS[mood]||'#555')+'"></span>'+mood+' ('+Math.round(count/total*100)+'%)</span>';
+  });
+}
+
+function renderMoodSummary(){
+  var el=document.getElementById('moodSummary');
+  if(!moods.length){el.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">No mood data yet.</div>';return;}
+  var counts={};moods.forEach(function(m){counts[m.mood]=(counts[m.mood]||0)+1;});
+  var dominant=Object.entries(counts).sort(function(a,b){return b[1]-a[1];})[0];
+  var total=moods.length;
+  el.innerHTML='<div style="text-align:center;padding:10px;"><div style="font-size:40px;">'+
+    (MOOD_EMOJI[dominant[0]]||'😐')+'</div><div style="font-size:16px;font-weight:600;margin:8px 0;">'+
+    dominant[0].charAt(0).toUpperCase()+dominant[0].slice(1)+'</div><div style="font-size:12px;color:var(--muted);">'+
+    'Most common mood ('+Math.round(dominant[1]/total*100)+'% of '+total+' readings)</div></div>'+
+    '<div style="margin-top:12px;">'+Object.entries(counts).sort(function(a,b){return b[1]-a[1];}).map(function(e){
+      var pct=Math.round(e[1]/total*100);
+      return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;"><span style="width:20px;text-align:center;">'+
+        (MOOD_EMOJI[e[0]]||'')+'</span><span style="flex:1;font-size:13px;">'+e[0]+'</span>'+
+        '<div style="width:120px;height:6px;background:var(--input-bg);border-radius:3px;overflow:hidden;">'+
+        '<div style="width:'+pct+'%;height:100%;background:'+(MOOD_COLORS[e[0]]||'#555')+';border-radius:3px;"></div></div>'+
+        '<span style="font-size:11px;color:var(--muted);width:35px;text-align:right;">'+pct+'%</span></div>';
+    }).join('')+'</div>';
+}
+
+function renderTimeline(){
+  var el=document.getElementById('moodTimeline'),empty=document.getElementById('timelineEmpty');
+  if(!moods.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=moods.slice().reverse().slice(0,50).map(function(m){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:18px;">'+(MOOD_EMOJI[m.mood]||'❓')+'</span>'+
+      '<span style="font-size:13px;flex:1;">'+m.mood+'</span>'+
+      '<span style="font-size:11px;color:var(--muted);">'+m.time+'</span></div>';
+  }).join('');
+}
+
+function renderCheckins(){
+  var el=document.getElementById('checkinList'),empty=document.getElementById('checkinEmpty');
+  if(!checkins.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=checkins.map(function(c){
+    var r=c.results||{};
+    var items=Object.entries(r).map(function(e){return '<span style="font-size:12px;">'+e[0]+': <b>'+e[1]+'</b></span>';}).join(' · ');
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);"><div style="font-size:11px;color:var(--muted);">'+c.time+'</div><div style="margin-top:4px;">'+items+'</div></div>';
+  }).join('');
+}
+
+function renderNotes(){
+  var el=document.getElementById('notesList'),empty=document.getElementById('notesEmpty');
+  if(!notes.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=notes.map(function(n){
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);"><div style="display:flex;justify-content:space-between;"><span style="font-size:12px;font-weight:500;">'+
+      (n.author||'Unknown')+'</span><span style="font-size:11px;color:var(--muted);">'+n.time+'</span></div>'+
+      '<div style="font-size:13px;margin-top:4px;">'+n.note+'</div>'+
+      '<button class="btn btn-ghost btn-sm" style="margin-top:4px;font-size:10px;" onclick="delNote('+n.id+')">Delete</button></div>';
+  }).join('');
+}
+
+function showNoteModal(){document.getElementById('noteModal').classList.add('show');}
+function hideNoteModal(){document.getElementById('noteModal').classList.remove('show');}
+async function saveNote(){
+  var text=document.getElementById('noteText').value.trim();
+  if(!text)return alert('Write a note first');
+  await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:text})});
+  document.getElementById('noteText').value='';hideNoteModal();load();
+}
+async function delNote(id){if(!confirm('Delete note?'))return;await fetch('/api/notes/'+id,{method:'DELETE'});load();}
+
+load();
 </script>
 {% endblock %}

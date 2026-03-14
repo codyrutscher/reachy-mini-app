@@ -400,6 +400,67 @@ def clear_all():
     db.clear_all()
     return jsonify({"status": "ok"})
 
+# ── Caregiver Notes API ─────────────────────────────────────────────
+
+@app.route("/api/notes", methods=["GET"])
+def get_notes():
+    pid = request.args.get("patient_id", type=int)
+    return jsonify(db.get_notes(patient_id=pid))
+
+@app.route("/api/notes", methods=["POST"])
+def add_note():
+    data = request.get_json(force=True)
+    user = session.get("user", {})
+    note = db.add_note(
+        note=data.get("note", ""),
+        author=user.get("name", user.get("username", "Unknown")),
+        patient_id=data.get("patient_id", 0),
+    )
+    db.add_activity("note_added", f"{note['author']}: {note['note'][:50]}")
+    return jsonify(note), 201
+
+@app.route("/api/notes/<int:nid>", methods=["DELETE"])
+def delete_note(nid):
+    db.delete_note(nid)
+    return jsonify({"status": "ok"})
+
+# ── Export API ──────────────────────────────────────────────────────
+
+@app.route("/api/export/csv", methods=["GET"])
+def export_csv():
+    import csv, io
+    activities = db.get_activity_log(limit=1000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Time", "Action", "Details"])
+    for a in activities:
+        writer.writerow([a["time"], a["action"], a["details"]])
+    resp = Response(output.getvalue(), mimetype="text/csv")
+    resp.headers["Content-Disposition"] = "attachment; filename=reachy_activity_log.csv"
+    return resp
+
+@app.route("/api/export/alerts-csv", methods=["GET"])
+def export_alerts_csv():
+    import csv, io
+    alerts = db.get_alerts(limit=1000)
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Time", "Type", "Message", "Details", "User Said", "Acknowledged"])
+    for a in alerts:
+        writer.writerow([a["time"], a["type"], a["message"], a["details"], a["user_said"], a["acknowledged"]])
+    resp = Response(output.getvalue(), mimetype="text/csv")
+    resp.headers["Content-Disposition"] = "attachment; filename=reachy_alerts.csv"
+    return resp
+
+@app.route("/api/export/report-text", methods=["GET"])
+def export_report():
+    reports = db.get_daily_reports(limit=1)
+    if not reports:
+        return Response("No reports available.", mimetype="text/plain")
+    resp = Response(reports[0]["report"], mimetype="text/plain")
+    resp.headers["Content-Disposition"] = f"attachment; filename=report_{reports[0]['date']}.txt"
+    return resp
+
 # ── SSE ─────────────────────────────────────────────────────────────
 
 @app.route("/stream")
