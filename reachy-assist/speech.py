@@ -18,9 +18,10 @@ _TTS_VOICES = {
 
 
 class SpeechEngine:
-    def __init__(self, text_mode: bool = False, language: str = "en"):
+    def __init__(self, text_mode: bool = False, language: str = "en", tts_rate: int = 150):
         self.text_mode = text_mode
         self.language = language
+        self.tts_rate = tts_rate
         self.stt_model = None
         self.tts_engine = None
 
@@ -36,7 +37,7 @@ class SpeechEngine:
         print("[SPEECH] Loading Whisper model...")
         self.stt_model = whisper.load_model(WHISPER_MODEL)
         self.tts_engine = pyttsx3.init()
-        self.tts_engine.setProperty("rate", 150)  # Slower for accessibility
+        self.tts_engine.setProperty("rate", self.tts_rate)  # Adjusted for profile
 
         # Try to set language-specific voice
         if language != "en":
@@ -140,7 +141,7 @@ class SpeechEngine:
         clean = text.replace('"', '\\"')
         try:
             subprocess.run(
-                ["say", "-v", voice, "-r", "150", clean],
+                ["say", "-v", voice, "-r", str(self.tts_rate), clean],
                 timeout=30,
             )
         except Exception as e:

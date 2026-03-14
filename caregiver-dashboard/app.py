@@ -263,6 +263,7 @@ def add_patient():
         name=data.get("name", ""), room=data.get("room", ""),
         age=data.get("age"), conditions=data.get("conditions", ""),
         emergency_contact=data.get("emergency_contact", ""),
+        patient_type=data.get("patient_type", "elderly"),
     )
     db.add_activity("patient_added", f"Added: {patient['name']}")
     return jsonify(patient), 201

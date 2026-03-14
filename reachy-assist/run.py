@@ -27,6 +27,10 @@ def main():
         choices=["en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko"],
         help="Language for speech recognition and TTS",
     )
+    parser.add_argument(
+        "--profile", choices=["elderly", "disabled"], default="elderly",
+        help="Patient profile: 'elderly' or 'disabled' — adapts behavior, exercises, and conversation style",
+    )
     args = parser.parse_args()
 
     brain_backend = args.brain if args.brain != "none" else None
@@ -37,6 +41,7 @@ def main():
         use_face=args.face,
         brain_backend=brain_backend,
         language=args.language,
+        profile=args.profile,
     )
     loop.start()
 

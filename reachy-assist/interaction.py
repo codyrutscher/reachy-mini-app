@@ -22,9 +22,16 @@ class InteractionLoop:
         use_face: bool = False,
         brain_backend: str = None,
         language: str = "en",
+        profile: str = "elderly",
     ):
+        from profiles import get_profile, get_care_response
+        self.profile = get_profile(profile)
+        self.profile_name = profile
+        self._get_care_response = get_care_response
+
         self.robot = Robot()
-        self.speech = SpeechEngine(text_mode=text_mode, language=language)
+        self.speech = SpeechEngine(text_mode=text_mode, language=language,
+                                   tts_rate=self.profile.get("tts_rate", 150))
         self.emotion = EmotionDetector(backend=emotion_backend)
         self.face_detector = None
         self.brain = None
@@ -37,7 +44,8 @@ class InteractionLoop:
         # LLM brain for real conversation
         if brain_backend:
             from brain import Brain
-            self.brain = Brain(backend=brain_backend)
+            self.brain = Brain(backend=brain_backend,
+                               profile_prompt=self.profile.get("system_prompt_addon", ""))
 
         # Subsystems
         from reminders import ReminderManager
@@ -62,7 +70,7 @@ class InteractionLoop:
 
         # Autonomy engine (proactive behaviors)
         from autonomy import AutonomyEngine
-        self.autonomy = AutonomyEngine()
+        self.autonomy = AutonomyEngine(profile_config=self.profile.get("autonomy", {}))
 
         self._pending_reminder = None
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
@@ -155,6 +163,14 @@ class InteractionLoop:
                 self.robot.express("neutral")
                 return ("I've sent a message to your caregiver right away. "
                         "They should be with you shortly. I'm right here with you.")
+
+        # ── Profile-specific care detection (disabled) ─────────────
+        care_resp = self._get_care_response(self.profile, "care", text)
+        if care_resp:
+            self.caregiver.alert_help_request(text)
+            self._log_activity("care_request", text)
+            self.robot.express("neutral")
+            return care_resp
 
         # ── Medication confirmation ────────────────────────────────
         if any(w in lower for w in ["took my medication", "took my medicine", "took my pills",
@@ -694,6 +710,7 @@ class InteractionLoop:
         mode_str = " + ".join(mode_info) if mode_info else "basic mode"
 
         print(f"\n=== Reachy Accessibility Assistant ({mode_str}) ===")
+        print(f"Profile: {self.profile['name']} ({self.profile_name})")
         print("Say 'help' to see what I can do. Press Ctrl+C to quit.\n")
 
         self._log_activity("session_start", "Reachy assistant started")

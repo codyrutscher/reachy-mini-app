@@ -73,6 +73,7 @@ def init_db():
             name TEXT NOT NULL,
             room TEXT DEFAULT '',
             age INTEGER,
+            patient_type TEXT DEFAULT 'elderly',
             conditions TEXT DEFAULT '',
             emergency_contact TEXT DEFAULT '',
             mood TEXT DEFAULT 'unknown',
@@ -313,11 +314,11 @@ def get_checkin_history(limit=30):
 
 # ── Patients ────────────────────────────────────────────────────────
 
-def add_patient(name, room="", age=None, conditions="", emergency_contact=""):
+def add_patient(name, room="", age=None, conditions="", emergency_contact="", patient_type="elderly"):
     conn = _get_conn()
     cur = conn.execute(
-        "INSERT INTO patients (name, room, age, conditions, emergency_contact) VALUES (?,?,?,?,?)",
-        (name, room, age, conditions, emergency_contact),
+        "INSERT INTO patients (name, room, age, patient_type, conditions, emergency_contact) VALUES (?,?,?,?,?,?)",
+        (name, room, age, patient_type, conditions, emergency_contact),
     )
     conn.commit()
     return get_patient(cur.lastrowid)

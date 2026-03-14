@@ -19,7 +19,7 @@ class ProactiveAction:
 
 
 class AutonomyEngine:
-    def __init__(self):
+    def __init__(self, profile_config: dict = None):
         self._running = False
         self._thread = None
         self._action_queue = []
@@ -36,17 +36,22 @@ class AutonomyEngine:
         self._morning_done = False
         self._afternoon_done = False
         self._evening_done = False
-        self._mood_history = []  # recent moods for pattern detection
+        self._mood_history = []
         self._consecutive_sad = 0
 
-        # Config (seconds)
-        self.idle_anim_interval = 45       # idle animation every 45s
-        self.hydration_interval = 3600     # water reminder every hour
-        self.exercise_interval = 7200      # exercise suggestion every 2h
-        self.checkin_interval = 14400      # check-in suggestion every 4h
-        self.min_proactive_gap = 300       # at least 5 min between proactive messages
-        self.silence_threshold = 600       # 10 min silence → gentle check
-        self.long_silence_threshold = 1800 # 30 min → more concerned check
+        # Apply profile config or defaults
+        cfg = profile_config or {}
+        self.idle_anim_interval = cfg.get("idle_anim_interval", 45)
+        self.hydration_interval = cfg.get("hydration_interval", 3600)
+        self.exercise_interval = cfg.get("exercise_interval", 7200)
+        self.checkin_interval = cfg.get("checkin_interval", 14400)
+        self.min_proactive_gap = cfg.get("min_proactive_gap", 300)
+        self.silence_threshold = cfg.get("silence_threshold", 600)
+        self.long_silence_threshold = cfg.get("long_silence_threshold", 1800)
+        self._morning_start = cfg.get("morning_hour_start", 7)
+        self._morning_end = cfg.get("morning_hour_end", 9)
+        self._evening_start = cfg.get("evening_hour_start", 20)
+        self._evening_end = cfg.get("evening_hour_end", 22)
 
     def start(self):
         """Start the autonomy engine background thread."""
@@ -141,8 +146,7 @@ class AutonomyEngine:
     # ── Time-based routines ─────────────────────────────────────────
 
     def _check_morning_routine(self, hour: int):
-        """7-9 AM: morning greeting, weather, affirmation, meds."""
-        if self._morning_done or not (7 <= hour <= 9):
+        if self._morning_done or not (self._morning_start <= hour <= self._morning_end):
             return
         if not self._can_be_proactive():
             return
@@ -186,8 +190,7 @@ class AutonomyEngine:
         self._mark_proactive()
 
     def _check_evening_routine(self, hour: int):
-        """20-22: evening wind-down."""
-        if self._evening_done or not (20 <= hour <= 22):
+        if self._evening_done or not (self._evening_start <= hour <= self._evening_end):
             return
         if not self._can_be_proactive():
             return

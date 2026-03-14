@@ -12,9 +12,12 @@ from config import (
 class Brain:
     """LLM-powered conversation engine with emotional memory and safety awareness."""
 
-    def __init__(self, backend: str = "ollama"):
+    def __init__(self, backend: str = "ollama", profile_prompt: str = ""):
         self.backend = backend
-        self.history = [{"role": "system", "content": SYSTEM_PROMPT}]
+        system = SYSTEM_PROMPT
+        if profile_prompt:
+            system += "\n\n" + profile_prompt
+        self.history = [{"role": "system", "content": system}]
         self.client = None
 
         # Mood tracking — remembers emotional trajectory
