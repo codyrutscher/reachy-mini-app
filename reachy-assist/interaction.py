@@ -72,12 +72,17 @@ class InteractionLoop:
         from fall_detection import FallDetector
         self.fall_detector = FallDetector(on_fall=self._on_fall_detected)
 
+        # Vitals monitoring
+        from vitals import VitalsMonitor
+        self.vitals_monitor = VitalsMonitor(on_alert=self._on_vitals_alert, interval=60)
+
         # Autonomy engine (proactive behaviors)
         from autonomy import AutonomyEngine
         self.autonomy = AutonomyEngine(profile_config=self.profile.get("autonomy", {}))
 
         self._pending_reminder = None
         self._pending_fall_alert = False
+        self._pending_vitals_alerts = []
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
         self._last_interaction = time.time()
         self._inactivity_threshold = 30 * 60  # 30 minutes
@@ -98,6 +103,12 @@ class InteractionLoop:
         self._log_activity("fall_detected",
                            f"confidence={details.get('confidence', 0):.0%}")
         self._pending_fall_alert = True
+
+    # ── Vitals alert callback (called from background thread) ─────
+
+    def _on_vitals_alert(self, alert_msg: str):
+        """Called by VitalsMonitor when a reading exceeds thresholds."""
+        self._pending_vitals_alerts.append(alert_msg)
 
     # ── Emotion combining ───────────────────────────────────────────
 
@@ -771,6 +782,11 @@ class InteractionLoop:
             mode_info.append("camera stream")
         if mode_info_fall:
             mode_info.append("fall detection")
+
+        # Start vitals monitoring background thread
+        self.vitals_monitor.start()
+        mode_info.append("vitals monitor")
+
         mode_str = " + ".join(mode_info) if mode_info else "basic mode"
 
         print(f"\n=== Reachy Accessibility Assistant ({mode_str}) ===")
@@ -804,6 +820,24 @@ class InteractionLoop:
                                 "If you need immediate help, say 'I need help'.")
                     self.speech.speak(fall_msg)
                     self._log_to_dashboard("reachy", fall_msg)
+                    time.sleep(0.5)
+                    self.robot.reset()
+
+                # Handle vitals alerts
+                if self._pending_vitals_alerts:
+                    alerts = self._pending_vitals_alerts[:]
+                    self._pending_vitals_alerts.clear()
+                    combined = "; ".join(alerts)
+                    self.caregiver.alert(
+                        "VITALS_ALERT",
+                        f"Abnormal vitals detected: {combined}",
+                    )
+                    self.robot.express("neutral")
+                    vitals_msg = (f"I noticed something in your vitals: {combined}. "
+                                  "I've let your caregiver know.")
+                    self.speech.speak(vitals_msg)
+                    self._log_to_dashboard("reachy", vitals_msg)
+                    self._log_activity("vitals_alert", combined[:80])
                     time.sleep(0.5)
                     self.robot.reset()
 
@@ -927,6 +961,7 @@ class InteractionLoop:
             self._log_activity("session_end", "Reachy assistant stopped")
             self.autonomy.stop()
             self.fall_detector.stop()
+            self.vitals_monitor.stop()
             self.music.stop()
             self.reminders.stop()
             if self.face_detector:

@@ -11,8 +11,8 @@ openai
 # RAG memory
 # OpenAI embeddings preferred; hash-based fallback if no API key
 
-# Fall detection (optional)
-# mediapipe
+# Fall detection
+mediapipe
 
 # Smart home (optional — needs Home Assistant)
 # No extra deps, uses urllib
