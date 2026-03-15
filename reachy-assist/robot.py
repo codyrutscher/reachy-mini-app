@@ -43,6 +43,15 @@ class Robot:
         print("[ROBOT] Running in SIMULATION mode (no hardware)")
         print("[ROBOT] All movements and expressions will be logged to console")
 
+        # Start visual simulator window
+        try:
+            from robot_sim import start_sim
+            start_sim()
+            self._sim_visual = True
+        except Exception as e:
+            print(f"[ROBOT] Visual sim not available: {e}")
+            self._sim_visual = False
+
     def start_camera_stream(self, port=5556):
         """Start camera capture and MJPEG stream server."""
         try:
@@ -102,6 +111,9 @@ class Robot:
     def express(self, emotion, duration=0.8):
         if self._sim_mode:
             print(f"[SIM] Express: {emotion}")
+            if self._sim_visual:
+                from robot_sim import send_expression
+                send_expression(emotion)
             return
 
         emotion_moves = {
@@ -129,6 +141,9 @@ class Robot:
     def perform(self, action):
         if self._sim_mode:
             print(f"[SIM] Perform: {action}")
+            if self._sim_visual:
+                from robot_sim import send_action
+                send_action(action)
             return True
 
         if not self.moves:

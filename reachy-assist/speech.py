@@ -123,6 +123,14 @@ class SpeechEngine:
 
     def speak(self, text: str):
         """Speak text aloud using TTS, or print to stdout in text mode."""
+        # Send to visual simulator if running
+        try:
+            from robot_sim import send_speech, _running as sim_running
+            if sim_running:
+                send_speech(text)
+        except Exception:
+            pass
+
         if self.text_mode:
             print(f"[REACHY] {text}")
             return
