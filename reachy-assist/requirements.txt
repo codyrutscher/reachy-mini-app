@@ -8,6 +8,9 @@ facenet-pytorch
 hsemotion-onnx
 openai
 
+# RAG memory
+# OpenAI embeddings preferred; hash-based fallback if no API key
+
 # Testing
 pytest
 pytest-cov

@@ -1,0 +1,40 @@
+{
+  "name": "Reachy Care Dashboard",
+  "short_name": "Reachy Care",
+  "description": "Caregiver dashboard for Reachy Mini accessibility assistant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["medical", "health"],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "url": "/",
+      "icons": [{"src": "/icons/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Patients",
+      "url": "/patients"
+    },
+    {
+      "name": "Medications",
+      "url": "/medications"
+    }
+  ]
+}

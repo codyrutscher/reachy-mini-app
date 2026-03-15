@@ -39,14 +39,29 @@ def reminder_manager(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def brain_fallback():
+def brain_fallback(monkeypatch):
     """Brain with no LLM backend (uses smart fallback)."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     from brain import Brain
+    # Reset memory module globals so it uses hash fallback
+    try:
+        import memory
+        memory._embedder = None
+        memory._embed_backend = None
+    except Exception:
+        pass
     return Brain(backend="none")
 
 
 @pytest.fixture
-def brain_with_memory():
+def brain_with_memory(monkeypatch):
     """Brain with conversation memory (no LLM backend)."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     from brain import Brain
+    try:
+        import memory
+        memory._embedder = None
+        memory._embed_backend = None
+    except Exception:
+        pass
     return Brain(backend="none")

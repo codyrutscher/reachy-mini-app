@@ -837,6 +837,17 @@ class InteractionLoop:
         except KeyboardInterrupt:
             print("\n[INFO] Shutting down...")
         finally:
+            # Save session summary to RAG memory
+            if self.brain:
+                try:
+                    summary = self.brain.get_session_summary()
+                    self._log_activity("session_summary",
+                                       f"Interactions: {summary['interactions']}, "
+                                       f"Mood: {summary['dominant_mood']}, "
+                                       f"Facts: {summary['facts_learned']}")
+                except Exception as e:
+                    print(f"[INFO] Could not save session summary: {e}")
+
             self._log_activity("session_end", "Reachy assistant stopped")
             self.autonomy.stop()
             self.music.stop()

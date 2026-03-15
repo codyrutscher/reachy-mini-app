@@ -17,6 +17,22 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "reachy-care-secret-key-change-me")
 CORS(app)
 
+# Serve PWA static files
+@app.route("/manifest.json")
+def manifest():
+    return app.send_static_file("manifest.json")
+
+@app.route("/sw.js")
+def service_worker():
+    resp = app.send_static_file("sw.js")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Content-Type"] = "application/javascript"
+    return resp
+
+@app.route("/icons/<path:filename>")
+def icons(filename):
+    return app.send_static_file(f"icons/{filename}")
+
 db.init_db()
 
 # Create default admin user if none exist

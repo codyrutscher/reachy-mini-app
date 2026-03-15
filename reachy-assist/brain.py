@@ -45,6 +45,18 @@ class Brain:
         self.session_start = True
         self._interaction_count = 0
         self._topics_discussed = []
+        self._patient_id = "default"
+        self._rag_enabled = False
+        self._session_start_time = None
+
+        # Initialize RAG memory if available
+        try:
+            import memory as mem
+            mem.init_memory_db()
+            self._rag_enabled = True
+            print("[BRAIN] RAG memory system enabled")
+        except Exception as e:
+            print(f"[BRAIN] RAG memory not available: {e}")
 
         if backend == "openai":
             from openai import OpenAI
@@ -66,6 +78,10 @@ class Brain:
 
     def think(self, user_text: str, emotion: str) -> str:
         """Generate a response given user input and detected emotion."""
+        import time as _time
+        if not self._session_start_time:
+            self._session_start_time = _time.time()
+
         lower = user_text.lower()
 
         # Safety check first — always takes priority
@@ -86,11 +102,13 @@ class Brain:
         # Check for confusion patterns
         confusion = self._check_confusion(lower)
 
-        # Build context for the LLM
-        context = self._build_context(emotion, loneliness, confusion)
+        # Build context for the LLM (includes RAG memories)
+        context = self._build_context(emotion, loneliness, confusion, user_text)
 
         if self.client is None:
-            return self._smart_fallback(emotion, loneliness, confusion)
+            response = self._smart_fallback(emotion, loneliness, confusion)
+            self._store_rag_turn(user_text, response, emotion)
+            return response
 
         # Augment the user message with emotional + situational context
         augmented = f"[{context}] {user_text}"
@@ -98,10 +116,18 @@ class Brain:
 
         # Add a greeting nudge for the first message
         if self.session_start:
-            self.history.append({
-                "role": "system",
-                "content": "This is the start of the conversation. Greet them warmly and ask how they're doing today.",
-            })
+            # Include past session context if available
+            greeting_ctx = "This is the start of the conversation. Greet them warmly and ask how they're doing today."
+            if self._rag_enabled:
+                try:
+                    import memory as mem
+                    summaries = mem.get_recent_summaries(self._patient_id, limit=1)
+                    if summaries:
+                        last = summaries[0]
+                        greeting_ctx += f" In your last session, the dominant mood was {last.get('mood_distribution', '{}')}. Reference something from before if relevant."
+                except Exception:
+                    pass
+            self.history.append({"role": "system", "content": greeting_ctx})
             self.session_start = False
 
         try:
@@ -118,10 +144,25 @@ class Brain:
             if len(self.history) > 61:
                 self.history = [self.history[0]] + self.history[-60:]
 
+            # Store this turn in RAG memory
+            self._store_rag_turn(user_text, reply, emotion)
+
             return reply
         except Exception as e:
             print(f"[BRAIN] LLM error: {e}")
-            return self._smart_fallback(emotion, loneliness, confusion)
+            response = self._smart_fallback(emotion, loneliness, confusion)
+            self._store_rag_turn(user_text, response, emotion)
+            return response
+
+    def _store_rag_turn(self, user_text: str, response: str, emotion: str):
+        """Store conversation turn in RAG memory (background, non-blocking)."""
+        if not self._rag_enabled:
+            return
+        try:
+            import memory as mem
+            mem.process_conversation_turn(user_text, response, emotion, self._patient_id)
+        except Exception as e:
+            print(f"[BRAIN] RAG store error: {e}")
 
     def _check_safety(self, text: str) -> str:
         """Check for crisis or emergency keywords."""
@@ -213,8 +254,8 @@ class Brain:
                             self.user_facts = self.user_facts[-20:]
                     break  # one fact per category per message
 
-    def _build_context(self, emotion: str, loneliness: bool, confusion: bool) -> str:
-        """Build a rich context string for the LLM."""
+    def _build_context(self, emotion: str, loneliness: bool, confusion: bool, user_text: str = "") -> str:
+        """Build a rich context string for the LLM, including RAG memories."""
         parts = [f"User seems {emotion}"]
 
         if loneliness:
@@ -230,6 +271,16 @@ class Brain:
         if self.user_facts:
             facts_str = "; ".join(self.user_facts[-5:])  # last 5 facts
             parts.append(f"things you remember about them: {facts_str}")
+
+        # RAG: retrieve relevant memories from past sessions
+        if self._rag_enabled and user_text:
+            try:
+                import memory as mem
+                rag_context = mem.build_memory_context(user_text, self._patient_id)
+                if rag_context:
+                    parts.append(f"from past sessions: {rag_context}")
+            except Exception as e:
+                print(f"[BRAIN] RAG recall error: {e}")
 
         # Mood trajectory
         if len(self.mood_history) >= 3:
@@ -279,20 +330,53 @@ class Brain:
 
     def get_session_summary(self) -> dict:
         """Generate a summary of the current conversation session."""
+        import time as _time
         mood_counts = {}
         for m in self.mood_history:
             mood_counts[m] = mood_counts.get(m, 0) + 1
         dominant_mood = max(mood_counts, key=mood_counts.get) if mood_counts else "unknown"
 
-        return {
+        duration = 0
+        if self._session_start_time:
+            duration = (_time.time() - self._session_start_time) / 60
+
+        summary = {
             "interactions": self._interaction_count,
             "dominant_mood": dominant_mood,
             "mood_distribution": mood_counts,
             "user_name": self.user_name,
             "facts_learned": len(self.user_facts),
             "user_facts": self.user_facts[:],
+            "duration_minutes": round(duration, 1),
             "consecutive_sad_peak": max(
                 (sum(1 for _ in g) for k, g in __import__("itertools").groupby(self.mood_history) if k == "sadness"),
                 default=0,
             ),
         }
+
+        # Save to RAG memory for cross-session continuity
+        if self._rag_enabled and self._interaction_count > 0:
+            try:
+                import memory as mem
+                summary_text = (
+                    f"{self._interaction_count} interactions, "
+                    f"dominant mood: {dominant_mood}, "
+                    f"duration: {summary['duration_minutes']}min"
+                )
+                if self.user_name:
+                    summary_text += f", patient: {self.user_name}"
+                if self.user_facts:
+                    summary_text += f", learned: {'; '.join(self.user_facts[:3])}"
+
+                mem.save_session_summary(
+                    summary=summary_text,
+                    mood_distribution=mood_counts,
+                    facts_learned=self.user_facts,
+                    duration_minutes=summary["duration_minutes"],
+                    patient_id=self._patient_id,
+                )
+                print("[BRAIN] Session summary saved to RAG memory")
+            except Exception as e:
+                print(f"[BRAIN] Failed to save session summary: {e}")
+
+        return summary

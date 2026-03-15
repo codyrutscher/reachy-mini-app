@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reachy Care">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 <title>{% block title %}Reachy Care{% endblock %}</title>
 <style>
   :root {
@@ -197,6 +203,33 @@ onSSE('alert', function(a) {
 });
 
 if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+
+// Register service worker for PWA
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(function(reg) {
+    console.log('[PWA] Service worker registered');
+    // Listen for push notifications
+    reg.addEventListener('updatefound', function() {
+      console.log('[PWA] New service worker available');
+    });
+  }).catch(function(err) {
+    console.log('[PWA] SW registration failed:', err);
+  });
+}
+
+// Push notification for critical alerts via SW
+onSSE('alert', function(a) {
+  if (['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST','HELP_REQUEST'].includes(a.type)
+      && Notification.permission === 'granted') {
+    var title = 'Reachy Care: ' + (a.type || 'Alert');
+    var body = a.message || 'New alert from Reachy';
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({type:'notify', title:title, body:body});
+    } else {
+      new Notification(title, {body:body, icon:'/icons/icon-192.png', badge:'/icons/icon-192.png'});
+    }
+  }
+});
 </script>
 {% block extra_js %}{% endblock %}
 </body>
