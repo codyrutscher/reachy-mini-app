@@ -1,11 +1,19 @@
 """Robot control layer — works with both simulation and real hardware.
+Falls back to simulation mode when no Reachy Mini is connected.
 Includes camera streaming and frame capture."""
 
 import threading
 import time
-from reachy_mini import ReachyMini
-from reachy_mini.utils import create_head_pose
 from config import EXPRESSIONS
+
+# Try to import Reachy Mini SDK
+try:
+    from reachy_mini import ReachyMini
+    from reachy_mini.utils import create_head_pose
+    _HAS_REACHY = True
+except ImportError:
+    _HAS_REACHY = False
+
 from movements import Movements
 
 
@@ -13,16 +21,27 @@ class Robot:
     def __init__(self):
         self.mini = None
         self.moves = None
+        self._sim_mode = False
         self._camera = None
         self._camera_thread = None
         self._camera_running = False
         self._stream_server = None
 
     def connect(self):
-        self.mini = ReachyMini()
-        self.mini.__enter__()
-        self.moves = Movements(self.mini)
-        print("[ROBOT] Connected")
+        if _HAS_REACHY:
+            try:
+                self.mini = ReachyMini()
+                self.mini.__enter__()
+                self.moves = Movements(self.mini)
+                print("[ROBOT] Connected to Reachy Mini")
+                return
+            except (ConnectionError, Exception) as e:
+                print(f"[ROBOT] Could not connect to Reachy Mini: {e}")
+
+        # Simulation fallback
+        self._sim_mode = True
+        print("[ROBOT] Running in SIMULATION mode (no hardware)")
+        print("[ROBOT] All movements and expressions will be logged to console")
 
     def start_camera_stream(self, port=5556):
         """Start camera capture and MJPEG stream server."""
@@ -40,17 +59,31 @@ class Robot:
     def _capture_loop(self):
         """Background thread that captures frames from Reachy's camera."""
         from camera_stream import update_frame
-        while self._camera_running:
-            try:
-                if self.mini and hasattr(self.mini, 'media') and self.mini.media:
-                    cam = self.mini.media.camera
-                    if cam:
-                        frame = cam.read()
-                        if frame is not None:
-                            update_frame(frame)
-            except Exception:
-                pass
-            time.sleep(0.1)
+        import cv2
+        # In sim mode, use the computer's webcam
+        if self._sim_mode:
+            cap = cv2.VideoCapture(0)
+            if not cap.isOpened():
+                print("[CAMERA] Could not open webcam for simulation")
+                return
+            while self._camera_running:
+                ret, frame = cap.read()
+                if ret:
+                    update_frame(frame)
+                time.sleep(0.1)
+            cap.release()
+        else:
+            while self._camera_running:
+                try:
+                    if self.mini and hasattr(self.mini, 'media') and self.mini.media:
+                        cam = self.mini.media.camera
+                        if cam:
+                            frame = cam.read()
+                            if frame is not None:
+                                update_frame(frame)
+                except Exception:
+                    pass
+                time.sleep(0.1)
 
     def stop_camera_stream(self):
         self._camera_running = False
@@ -60,11 +93,17 @@ class Robot:
 
     def disconnect(self):
         self.stop_camera_stream()
-        if self.mini:
+        if self.mini and not self._sim_mode:
             self.mini.__exit__(None, None, None)
             print("[ROBOT] Disconnected")
+        elif self._sim_mode:
+            print("[ROBOT] Simulation ended")
 
     def express(self, emotion, duration=0.8):
+        if self._sim_mode:
+            print(f"[SIM] Express: {emotion}")
+            return
+
         emotion_moves = {
             "joy": self.moves.happy_wiggle,
             "sadness": self.moves.sad_droop,
@@ -88,6 +127,10 @@ class Robot:
         print(f"[ROBOT] Expressing: {emotion}")
 
     def perform(self, action):
+        if self._sim_mode:
+            print(f"[SIM] Perform: {action}")
+            return True
+
         if not self.moves:
             return False
         actions = {
@@ -123,6 +166,8 @@ class Robot:
         return False
 
     def reset(self, duration=0.6):
+        if self._sim_mode:
+            return
         if self.moves:
             self.moves.reset(duration)
         elif self.mini:
@@ -133,6 +178,9 @@ class Robot:
             )
 
     def nod(self):
+        if self._sim_mode:
+            print("[SIM] Nod")
+            return
         if self.moves:
             self.moves.nod_yes()
         elif self.mini:
