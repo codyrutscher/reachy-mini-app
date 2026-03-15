@@ -7,9 +7,10 @@ import random
 class CognitiveExercises:
     """Simple cognitive games suitable for elderly users."""
 
-    def __init__(self):
+    def __init__(self, on_game_end=None):
         self.active_game = None
         self.game_state = {}
+        self._on_game_end = on_game_end
 
     @property
     def is_active(self) -> bool:
@@ -64,6 +65,11 @@ class CognitiveExercises:
         self.game_state = {}
         return "That was fun! We can play again anytime."
 
+    def _report_score(self, game_type, score, max_score):
+        """Notify listener of a completed game score."""
+        if self._on_game_end:
+            self._on_game_end(game_type, score, max_score)
+
     # ── Word Association ────────────────────────────────────────────
 
     _WORD_STARTERS = [
@@ -89,6 +95,7 @@ class CognitiveExercises:
     def _play_word_association(self, user_input: str) -> str:
         self.game_state["turns"] += 1
         if self.game_state["turns"] >= 8:
+            self._report_score("word_association", self.game_state["turns"], 8)
             self.active_game = None
             return "Great one! That was a fun round — you came up with some really creative connections. Want to play again or try something else?"
 
@@ -156,6 +163,7 @@ class CognitiveExercises:
     def _end_trivia(self) -> str:
         score = self.game_state["score"]
         total = self.game_state["index"]
+        self._report_score("trivia", score, total)
         self.active_game = None
         if score == total:
             return f"You got all {total} right! What a sharp mind you have!"
@@ -217,6 +225,7 @@ class CognitiveExercises:
     def _play_categories(self, user_input: str) -> str:
         if "done" in user_input.lower() or "stop" in user_input.lower():
             count = len(self.game_state["answers"])
+            self._report_score("categories", count, count)
             self.active_game = None
             if count >= 5:
                 return f"Wow, you named {count}! That's impressive. Your mind is sharp!"
@@ -256,6 +265,7 @@ class CognitiveExercises:
         remembered = [item for item in items if item in lower]
         forgot = [item for item in items if item not in lower]
 
+        self._report_score("memory", len(remembered), len(items))
         self.active_game = None
         count = len(remembered)
 

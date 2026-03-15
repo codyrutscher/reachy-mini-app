@@ -62,7 +62,7 @@ class InteractionLoop:
         self.checkin = DailyCheckIn()
         self.caregiver = CaregiverAlerts()
         self.reminiscence = ReminiscenceTherapy()
-        self.cognitive = CognitiveExercises()
+        self.cognitive = CognitiveExercises(on_game_end=self._on_cognitive_game_end)
         self.music = MusicPlayer()
         self.exercises = GuidedExercises()
         self.stories = StoryReader()
@@ -109,6 +109,19 @@ class InteractionLoop:
     def _on_vitals_alert(self, alert_msg: str):
         """Called by VitalsMonitor when a reading exceeds thresholds."""
         self._pending_vitals_alerts.append(alert_msg)
+
+    # ── Cognitive game score callback ─────────────────────────────
+
+    def _on_cognitive_game_end(self, game_type: str, score: float, max_score: float):
+        """Called when a cognitive game finishes — log to patient model."""
+        try:
+            from patient_model import log_cognitive_score, init_model_db
+            init_model_db()
+            log_cognitive_score(game_type, score, max_score)
+            self._log_activity("cognitive_score",
+                               f"{game_type}: {score}/{max_score}")
+        except Exception as e:
+            print(f"[INFO] Could not log cognitive score: {e}")
 
     # ── Emotion combining ───────────────────────────────────────────
 
