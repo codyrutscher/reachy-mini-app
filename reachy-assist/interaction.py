@@ -369,7 +369,23 @@ class InteractionLoop:
 
         # ── Music ──────────────────────────────────────────────────
         if any(w in lower for w in ["play music", "play a song", "music", "sing",
-                                     "play something", "melody", "lullaby"]):
+                                     "play something", "melody", "lullaby",
+                                     "play me", "put on", "i want to hear",
+                                     "can you play", "what songs"]):
+            # Check if asking about the library
+            if any(w in lower for w in ["what songs", "how many songs", "song library",
+                                         "list songs", "what music do you have"]):
+                count = self.music.get_song_count()
+                melodies = ", ".join(self.music.list_melodies())
+                if count > 0:
+                    return f"I have {count} songs in my library plus these melodies: {melodies}. Ask me to play a song by name, or by mood like 'play something calm'."
+                return f"I don't have any songs in my library yet, but I can play these melodies: {melodies}. You can add MP3 or WAV files to the songs folder!"
+            # Try song library first
+            resp, played = self.music.get_song_for_request(text)
+            if resp:
+                self._log_activity("music_play", text[:80])
+                return resp
+            # Fall back to melody matching
             return self._handle_music(lower)
         if any(w in lower for w in ["stop music", "stop playing", "quiet", "silence"]):
             self.music.stop()

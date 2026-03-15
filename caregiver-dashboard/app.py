@@ -14,6 +14,17 @@ from flask import Flask, request, jsonify, render_template, Response, session, r
 from flask_cors import CORS
 import db
 
+# Auto-detect PostgreSQL/Supabase — use Postgres backend if configured
+_pg_url = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL", "")
+if _pg_url:
+    try:
+        import db_postgres
+        db = db_postgres
+        print("[APP] Using PostgreSQL/Supabase database backend")
+    except ImportError:
+        print("[APP] psycopg2 not installed — falling back to SQLite")
+        print("[APP] Install with: pip install psycopg2-binary")
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "reachy-care-secret-key-change-me")
 CORS(app)

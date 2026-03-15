@@ -1,12 +1,24 @@
-"""Music, melodies, and sound effects for Reachy — plays through Mac speakers."""
+"""Music, melodies, and sound effects for Reachy — plays through Mac speakers.
 
+Supports:
+  - Generated melodies (sine wave synthesis)
+  - Sound effects (short cues)
+  - Song library (MP3/WAV files from a configurable folder)
+  - Song search by title, artist, genre, or mood
+"""
+
+import json
 import math
 import os
+import sqlite3
 import struct
 import subprocess
+import threading
 import wave
 
 SOUNDS_DIR = os.path.join(os.path.dirname(__file__), "sounds")
+SONGS_DIR = os.environ.get("REACHY_SONGS_DIR", os.path.join(os.path.dirname(__file__), "songs"))
+SONGS_DB = os.path.join(os.path.dirname(__file__), "songs.db")
 
 # ── Note frequencies ────────────────────────────────────────────────
 _NOTES = {
@@ -170,8 +182,275 @@ class MusicPlayer:
     def __init__(self):
         self._process = None
         self._cache = {}
+        self._song_db_ready = False
         os.makedirs(SOUNDS_DIR, exist_ok=True)
+        os.makedirs(SONGS_DIR, exist_ok=True)
+        self._init_song_db()
         print("[MUSIC] Ready")
+
+    def _init_song_db(self):
+        """Initialize the song library database and scan for files."""
+        try:
+            conn = sqlite3.connect(SONGS_DB)
+            conn.row_factory = sqlite3.Row
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS songs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    artist TEXT DEFAULT 'Unknown',
+                    genre TEXT DEFAULT '',
+                    mood TEXT DEFAULT '',
+                    era TEXT DEFAULT '',
+                    duration_seconds REAL DEFAULT 0,
+                    file_path TEXT NOT NULL UNIQUE,
+                    play_count INTEGER DEFAULT 0,
+                    last_played TEXT DEFAULT '',
+                    added_at TEXT DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    description TEXT DEFAULT '',
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
+                CREATE TABLE IF NOT EXISTS playlist_songs (
+                    playlist_id INTEGER,
+                    song_id INTEGER,
+                    position INTEGER DEFAULT 0,
+                    FOREIGN KEY (playlist_id) REFERENCES playlists(id),
+                    FOREIGN KEY (song_id) REFERENCES songs(id),
+                    UNIQUE(playlist_id, song_id)
+                );
+            """)
+            conn.commit()
+            conn.close()
+            self._song_db_ready = True
+            # Scan for new files on startup
+            self.scan_songs_folder()
+        except Exception as e:
+            print(f"[MUSIC] Song DB init error: {e}")
+
+    def scan_songs_folder(self):
+        """Scan the songs directory and add any new audio files to the database."""
+        if not os.path.isdir(SONGS_DIR):
+            return 0
+        extensions = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")
+        added = 0
+        conn = sqlite3.connect(SONGS_DB)
+        for root, _dirs, files in os.walk(SONGS_DIR):
+            for fname in files:
+                if not fname.lower().endswith(extensions):
+                    continue
+                fpath = os.path.join(root, fname)
+                # Check if already in DB
+                existing = conn.execute(
+                    "SELECT id FROM songs WHERE file_path=?", (fpath,)
+                ).fetchone()
+                if existing:
+                    continue
+                # Parse title from filename: "Artist - Title.mp3" or just "Title.mp3"
+                name_no_ext = os.path.splitext(fname)[0]
+                if " - " in name_no_ext:
+                    artist, title = name_no_ext.split(" - ", 1)
+                else:
+                    artist, title = "Unknown", name_no_ext
+                # Try to guess mood/genre from folder structure
+                rel = os.path.relpath(root, SONGS_DIR)
+                genre = rel if rel != "." else ""
+                conn.execute(
+                    "INSERT INTO songs (title, artist, genre, file_path) VALUES (?,?,?,?)",
+                    (title.strip(), artist.strip(), genre, fpath),
+                )
+                added += 1
+        conn.commit()
+        conn.close()
+        if added:
+            print(f"[MUSIC] Scanned songs folder: {added} new songs added")
+        return added
+
+    def add_song(self, file_path, title=None, artist="Unknown", genre="",
+                 mood="", era=""):
+        """Manually add a song to the library."""
+        if not os.path.exists(file_path):
+            return None
+        if not title:
+            title = os.path.splitext(os.path.basename(file_path))[0]
+        conn = sqlite3.connect(SONGS_DB)
+        try:
+            conn.execute(
+                "INSERT INTO songs (title, artist, genre, mood, era, file_path) VALUES (?,?,?,?,?,?)",
+                (title, artist, genre, mood, era, file_path),
+            )
+            conn.commit()
+            sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.close()
+            return sid
+        except sqlite3.IntegrityError:
+            conn.close()
+            return None
+
+    def search_songs(self, query="", mood="", genre="", limit=10):
+        """Search the song library by text, mood, or genre."""
+        conn = sqlite3.connect(SONGS_DB)
+        conn.row_factory = sqlite3.Row
+        conditions = []
+        params = []
+        if query:
+            conditions.append("(title LIKE ? OR artist LIKE ?)")
+            params.extend([f"%{query}%", f"%{query}%"])
+        if mood:
+            conditions.append("mood LIKE ?")
+            params.append(f"%{mood}%")
+        if genre:
+            conditions.append("genre LIKE ?")
+            params.append(f"%{genre}%")
+        where = " AND ".join(conditions) if conditions else "1=1"
+        rows = conn.execute(
+            f"SELECT * FROM songs WHERE {where} ORDER BY play_count DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_song_count(self):
+        """Get total number of songs in the library."""
+        conn = sqlite3.connect(SONGS_DB)
+        count = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
+        conn.close()
+        return count
+
+    def play_song(self, song_id=None, title=None, query=None):
+        """Play a song from the library by ID, title, or search query."""
+        conn = sqlite3.connect(SONGS_DB)
+        conn.row_factory = sqlite3.Row
+        song = None
+        if song_id:
+            song = conn.execute("SELECT * FROM songs WHERE id=?", (song_id,)).fetchone()
+        elif title:
+            song = conn.execute(
+                "SELECT * FROM songs WHERE title LIKE ? LIMIT 1", (f"%{title}%",)
+            ).fetchone()
+        elif query:
+            song = conn.execute(
+                "SELECT * FROM songs WHERE title LIKE ? OR artist LIKE ? LIMIT 1",
+                (f"%{query}%", f"%{query}%"),
+            ).fetchone()
+        if not song:
+            conn.close()
+            return None
+        # Update play count
+        from datetime import datetime
+        conn.execute(
+            "UPDATE songs SET play_count=play_count+1, last_played=? WHERE id=?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), song["id"]),
+        )
+        conn.commit()
+        conn.close()
+        self.play_file(song["file_path"])
+        return dict(song)
+
+    def play_by_mood(self, mood):
+        """Play a random song matching the given mood."""
+        import random as _rand
+        conn = sqlite3.connect(SONGS_DB)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM songs WHERE mood LIKE ?", (f"%{mood}%",)
+        ).fetchall()
+        conn.close()
+        if not rows:
+            return None
+        song = _rand.choice(rows)
+        return self.play_song(song_id=song["id"])
+
+    def get_song_for_request(self, text):
+        """Parse a natural language song request and try to play it.
+        Returns (response_text, played_bool)."""
+        lower = text.lower()
+        # Try direct title/artist search
+        for prefix in ["play ", "put on ", "i want to hear ", "can you play "]:
+            if prefix in lower:
+                query = lower.split(prefix, 1)[1].strip().rstrip("?.,!")
+                if query:
+                    song = self.play_song(query=query)
+                    if song:
+                        return (f"Now playing: {song['title']} by {song['artist']}.", True)
+                    return (f"I couldn't find '{query}' in my song library. "
+                            f"I have {self.get_song_count()} songs. "
+                            f"Try asking for a genre or mood instead!", False)
+
+        # Mood-based requests
+        mood_map = {
+            "happy": ["happy", "cheerful", "upbeat", "fun"],
+            "calm": ["calm", "relaxing", "peaceful", "soothing", "chill"],
+            "sad": ["sad", "melancholy", "blue"],
+            "energetic": ["energetic", "lively", "dance", "party"],
+            "nostalgic": ["nostalgic", "old", "classic", "retro", "oldies"],
+            "romantic": ["romantic", "love", "sweet"],
+            "spiritual": ["spiritual", "hymn", "gospel", "church"],
+        }
+        for mood, triggers in mood_map.items():
+            if any(t in lower for t in triggers):
+                song = self.play_by_mood(mood)
+                if song:
+                    return (f"Here's something {mood}: {song['title']} by {song['artist']}.", True)
+                # Fall back to a matching generated melody
+                melody_fallback = {"happy": "happy", "calm": "calm", "sad": "nostalgic",
+                                   "energetic": "celebration", "nostalgic": "nostalgic",
+                                   "romantic": "gentle", "spiritual": "gentle"}
+                mel = melody_fallback.get(mood, "gentle")
+                self.play_melody(mel)
+                return (f"I don't have {mood} songs in my library yet, "
+                        f"but here's a {mel} melody for you.", True)
+
+        return None, False
+
+    # ── Playlist management ─────────────────────────────────────────
+
+    def create_playlist(self, name, description=""):
+        conn = sqlite3.connect(SONGS_DB)
+        try:
+            conn.execute(
+                "INSERT INTO playlists (name, description) VALUES (?,?)",
+                (name, description),
+            )
+            conn.commit()
+            pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.close()
+            return pid
+        except sqlite3.IntegrityError:
+            conn.close()
+            return None
+
+    def add_to_playlist(self, playlist_name, song_id):
+        conn = sqlite3.connect(SONGS_DB)
+        pl = conn.execute(
+            "SELECT id FROM playlists WHERE name=?", (playlist_name,)
+        ).fetchone()
+        if not pl:
+            conn.close()
+            return False
+        pos = conn.execute(
+            "SELECT COALESCE(MAX(position),0)+1 FROM playlist_songs WHERE playlist_id=?",
+            (pl[0],),
+        ).fetchone()[0]
+        try:
+            conn.execute(
+                "INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES (?,?,?)",
+                (pl[0], song_id, pos),
+            )
+            conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+        conn.close()
+        return True
+
+    def list_playlists(self):
+        conn = sqlite3.connect(SONGS_DB)
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT * FROM playlists ORDER BY name").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
 
     @property
     def is_playing(self):
