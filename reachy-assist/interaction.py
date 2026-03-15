@@ -68,11 +68,16 @@ class InteractionLoop:
         self.stories = StoryReader()
         self.meditation = MeditationGuide()
 
+        # Fall detection
+        from fall_detection import FallDetector
+        self.fall_detector = FallDetector(on_fall=self._on_fall_detected)
+
         # Autonomy engine (proactive behaviors)
         from autonomy import AutonomyEngine
         self.autonomy = AutonomyEngine(profile_config=self.profile.get("autonomy", {}))
 
         self._pending_reminder = None
+        self._pending_fall_alert = False
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
         self._last_interaction = time.time()
         self._inactivity_threshold = 30 * 60  # 30 minutes
@@ -84,6 +89,15 @@ class InteractionLoop:
 
     def _on_reminder(self, message: str):
         self._pending_reminder = message
+
+    # ── Fall detection callback (called from background thread) ────
+
+    def _on_fall_detected(self, details: dict):
+        """Called by FallDetector when a fall is detected."""
+        self.caregiver.alert_fall_detected(details)
+        self._log_activity("fall_detected",
+                           f"confidence={details.get('confidence', 0):.0%}")
+        self._pending_fall_alert = True
 
     # ── Emotion combining ───────────────────────────────────────────
 
@@ -736,6 +750,18 @@ class InteractionLoop:
                 print("[INFO] Face detection unavailable, using text only")
                 self.face_detector = None
 
+        # Start fall detection using camera frames
+        if self.fall_detector.available and self._camera_server:
+            from camera_stream import get_latest_frame
+            self.fall_detector.start_monitoring(frame_source=get_latest_frame)
+            mode_info_fall = True
+        else:
+            mode_info_fall = False
+            if not self.fall_detector.available:
+                print("[INFO] Fall detection unavailable (install mediapipe)")
+            elif not self._camera_server:
+                print("[INFO] Fall detection needs camera — skipped")
+
         mode_info = []
         if self.brain:
             mode_info.append("LLM brain")
@@ -743,6 +769,8 @@ class InteractionLoop:
             mode_info.append("face detection")
         if self._camera_server:
             mode_info.append("camera stream")
+        if mode_info_fall:
+            mode_info.append("fall detection")
         mode_str = " + ".join(mode_info) if mode_info else "basic mode"
 
         print(f"\n=== Reachy Accessibility Assistant ({mode_str}) ===")
@@ -764,6 +792,18 @@ class InteractionLoop:
                     self.robot.express("surprise")
                     self.speech.speak(msg)
                     self._log_to_dashboard("reachy", msg)
+                    time.sleep(0.5)
+                    self.robot.reset()
+
+                # Handle fall detection alert
+                if self._pending_fall_alert:
+                    self._pending_fall_alert = False
+                    self.robot.express("fear")
+                    fall_msg = ("I detected a possible fall! Are you okay? "
+                                "I've already notified your caregiver. "
+                                "If you need immediate help, say 'I need help'.")
+                    self.speech.speak(fall_msg)
+                    self._log_to_dashboard("reachy", fall_msg)
                     time.sleep(0.5)
                     self.robot.reset()
 
@@ -886,6 +926,7 @@ class InteractionLoop:
 
             self._log_activity("session_end", "Reachy assistant stopped")
             self.autonomy.stop()
+            self.fall_detector.stop()
             self.music.stop()
             self.reminders.stop()
             if self.face_detector:

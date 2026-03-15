@@ -122,6 +122,16 @@ class CaregiverAlerts:
             user_said=user_text,
         )
 
+    def alert_fall_detected(self, details: dict):
+        """Alert when fall detection system detects a fall."""
+        confidence = details.get("confidence", 0)
+        indicators = details.get("indicators", {})
+        self.alert(
+            "FALL_DETECTED",
+            f"Fall detected with {confidence:.0%} confidence.",
+            details=f"Indicators: {indicators}",
+        )
+
     def _send_to_dashboard(self, alert: dict):
         """POST alert to the caregiver web dashboard."""
         try:

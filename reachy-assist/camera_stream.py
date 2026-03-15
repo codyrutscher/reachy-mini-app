@@ -68,6 +68,12 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         pass  # suppress logs
 
 
+def get_latest_frame():
+    """Return the most recent camera frame (or None)."""
+    with _frame_lock:
+        return _latest_frame
+
+
 def update_frame(frame):
     """Called by the robot to push a new camera frame."""
     global _latest_frame
