@@ -121,11 +121,12 @@ ROUTINES = {
 
 
 class GuidedExercises:
-    def __init__(self):
+    def __init__(self, on_exercise_done=None):
         self.active = False
         self._current_exercise = None
         self._step_index = 0
         self._routine_queue = []
+        self._on_exercise_done = on_exercise_done
 
     @property
     def is_active(self):
@@ -185,6 +186,8 @@ class GuidedExercises:
         ex = EXERCISES[self._current_exercise]
         if self._step_index >= len(ex["steps"]):
             # Exercise done
+            if self._on_exercise_done:
+                self._on_exercise_done(ex["name"], completed=True)
             if self._routine_queue:
                 done_msg = f"Finished {ex['name']}! "
                 next_text, next_action = self._start_next_from_queue()
@@ -197,6 +200,10 @@ class GuidedExercises:
         return step, ex["robot_action"]
 
     def stop(self) -> str:
+        if self._current_exercise and self._on_exercise_done:
+            ex = EXERCISES.get(self._current_exercise)
+            if ex:
+                self._on_exercise_done(ex["name"], completed=False)
         self.active = False
         self._current_exercise = None
         self._routine_queue = []

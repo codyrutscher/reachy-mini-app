@@ -29,6 +29,15 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "reachy-care-secret-key-change-me")
 CORS(app)
 
+# i18n — inject translation function into all templates
+from i18n import t as _t, set_language, get_language, available_languages
+
+@app.context_processor
+def inject_i18n():
+    lang = session.get("lang") or request.args.get("lang") or "en"
+    set_language(lang)
+    return {"t": _t, "current_lang": lang, "available_languages": available_languages()}
+
 # Try bcrypt, fall back to sha256
 try:
     import bcrypt
@@ -123,6 +132,13 @@ def login_required(f):
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
+
+
+@app.route("/set-lang/<lang>")
+def switch_lang(lang):
+    if lang in available_languages():
+        session["lang"] = lang
+    return redirect(request.referrer or "/")
 
 
 @app.route("/login", methods=["GET"])

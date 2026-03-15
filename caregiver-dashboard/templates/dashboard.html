@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% block title %}Dashboard — Reachy Care{% endblock %}
+{% block title %}{{ t('dashboard') }} — Reachy Care{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -83,20 +83,20 @@
       </div>
       <div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <span style="font-size:14px;color:var(--muted);font-weight:500;">Alerts</span>
+          <span style="font-size:14px;color:var(--muted);font-weight:500;">{{ t('alerts') }}</span>
           <button class="btn btn-ghost btn-sm" onclick="clearAcked()">Clear Acknowledged</button>
         </div>
         <div id="alertList" style="max-height:300px;overflow-y:auto;"></div>
         <div class="empty" id="emptyAlerts" style="padding:30px 10px;">
           <div class="empty-icon">✅</div>
-          <p>No alerts yet. Reachy is keeping watch.</p>
+          <p>{{ t('no_alerts') }}. Reachy is keeping watch.</p>
         </div>
       </div>
     </div>
   </div>
 
   <div class="dash-sidebar">
-    <div class="sidebar-head">💬 Live Conversation</div>
+    <div class="sidebar-head">💬 {{ t('conversation') }}</div>
     <div class="convo" id="convo">
       <div class="empty" style="padding:30px 10px;">
         <div class="empty-icon">🎙️</div>
@@ -112,11 +112,11 @@
         <button class="qbtn" onclick="quickMsg('I love you. Everything is going to be okay.')">🤗 Comfort</button>
       </div>
       <div class="msg-row">
-        <input class="msg-input" id="msgInput" placeholder="Type a message for Reachy to say..."
+        <input class="msg-input" id="msgInput" placeholder="{{ t('message_placeholder') }}"
                onkeydown="if(event.key==='Enter')sendMsg()" aria-label="Message to patient">
-        <button class="btn-send" onclick="sendMsg()">Send</button>
+        <button class="btn-send" onclick="sendMsg()">{{ t('send') }}</button>
       </div>
-      <button onclick="triggerSOS()" style="width:100%;margin-top:8px;padding:10px;background:var(--red);border:none;color:white;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">🚨 Emergency SOS</button>
+      <button onclick="triggerSOS()" style="width:100%;margin-top:8px;padding:10px;background:var(--red);border:none;color:white;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">🚨 {{ t('emergency_sos') }}</button>
     </div>
   </div>
 </div>

@@ -64,7 +64,7 @@ class InteractionLoop:
         self.reminiscence = ReminiscenceTherapy()
         self.cognitive = CognitiveExercises(on_game_end=self._on_cognitive_game_end)
         self.music = MusicPlayer()
-        self.exercises = GuidedExercises()
+        self.exercises = GuidedExercises(on_exercise_done=self._on_exercise_done)
         self.stories = StoryReader()
         self.meditation = MeditationGuide()
 
@@ -122,6 +122,19 @@ class InteractionLoop:
                                f"{game_type}: {score}/{max_score}")
         except Exception as e:
             print(f"[INFO] Could not log cognitive score: {e}")
+
+    # ── Exercise completion callback ──────────────────────────────
+
+    def _on_exercise_done(self, exercise_name: str, completed: bool):
+        """Called when a guided exercise finishes — log to patient model."""
+        try:
+            from patient_model import log_exercise, init_model_db
+            init_model_db()
+            log_exercise(exercise_name, completed=completed)
+            self._log_activity("exercise_done",
+                               f"{exercise_name} ({'completed' if completed else 'stopped early'})")
+        except Exception as e:
+            print(f"[INFO] Could not log exercise: {e}")
 
     # ── Emotion combining ───────────────────────────────────────────
 
@@ -553,6 +566,12 @@ class InteractionLoop:
             "action": "med_confirmed",
             "details": f"Patient confirmed: {text}",
         })
+        try:
+            from patient_model import log_med_adherence, init_model_db
+            init_model_db()
+            log_med_adherence("unknown", "taken")
+        except Exception as e:
+            print(f"[INFO] Could not log med adherence: {e}")
         self.robot.express("joy")
         return "Great job taking your medication! I'll let your caregiver know. Keep it up!"
 
@@ -748,6 +767,12 @@ class InteractionLoop:
                         self.speech.speak(msg)
                         self._log_to_dashboard("reachy", msg)
                         self._log_activity("med_reminder", f"Reminded: {med['name']} at {t}")
+                        try:
+                            from patient_model import log_med_adherence, init_model_db
+                            init_model_db()
+                            log_med_adherence(med['name'], "reminded", scheduled_time=t)
+                        except Exception:
+                            pass
         except Exception:
             pass
 

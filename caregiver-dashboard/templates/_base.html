@@ -126,21 +126,26 @@
 <nav class="nav">
   <div class="nav-brand">🤖 <span>Reachy</span> Care</div>
   <div class="nav-links">
-    <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">📊 Dashboard</a>
-    <a href="/patients" class="nav-link {% if active_page == 'patients' %}active{% endif %}">👥 Patients</a>
-    <a href="/medications" class="nav-link {% if active_page == 'medications' %}active{% endif %}">💊 Medications</a>
-    <a href="/schedule" class="nav-link {% if active_page == 'schedule' %}active{% endif %}">📅 Schedule</a>
-    <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">📈 History</a>
-    <a href="/reports" class="nav-link {% if active_page == 'reports' %}active{% endif %}">📝 Reports</a>
-    <a href="/activity" class="nav-link {% if active_page == 'activity' %}active{% endif %}">📋 Activity</a>
-    <a href="/facilities" class="nav-link {% if active_page == 'facilities' %}active{% endif %}">🏥 Facilities</a>
-    <a href="/family" class="nav-link {% if active_page == 'family' %}active{% endif %}">👨‍👩‍👧 Family</a>
-    <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">⚙️ Settings</a>
+    <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">📊 {{ t('dashboard') }}</a>
+    <a href="/patients" class="nav-link {% if active_page == 'patients' %}active{% endif %}">👥 {{ t('patients') }}</a>
+    <a href="/medications" class="nav-link {% if active_page == 'medications' %}active{% endif %}">💊 {{ t('medications') }}</a>
+    <a href="/schedule" class="nav-link {% if active_page == 'schedule' %}active{% endif %}">📅 {{ t('schedule') }}</a>
+    <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">📈 {{ t('history') }}</a>
+    <a href="/reports" class="nav-link {% if active_page == 'reports' %}active{% endif %}">📝 {{ t('reports') }}</a>
+    <a href="/activity" class="nav-link {% if active_page == 'activity' %}active{% endif %}">📋 {{ t('activity') }}</a>
+    <a href="/facilities" class="nav-link {% if active_page == 'facilities' %}active{% endif %}">🏥 {{ t('facilities') }}</a>
+    <a href="/family" class="nav-link {% if active_page == 'family' %}active{% endif %}">👨‍👩‍👧 {{ t('family') }}</a>
+    <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">⚙️ {{ t('settings') }}</a>
   </div>
   <div class="nav-right">
+    <select onchange="window.location='/set-lang/'+this.value" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">
+      {% for lang in available_languages %}
+      <option value="{{ lang }}" {% if lang == current_lang %}selected{% endif %}>{{ lang.upper() }}</option>
+      {% endfor %}
+    </select>
     <div class="nav-status">
       <div class="nav-dot" id="navDot"></div>
-      <span id="navConn">Connected</span>
+      <span id="navConn">{{ t('connected') }}</span>
     </div>
   </div>
 </nav>
@@ -161,11 +166,11 @@ function connectSSE() {
   _es = new EventSource('/stream');
   _es.onopen = () => {
     document.getElementById('navDot').className = 'nav-dot';
-    document.getElementById('navConn').textContent = 'Connected';
+    document.getElementById('navConn').textContent = '{{ t("connected") }}';
   };
   _es.onerror = () => {
     document.getElementById('navDot').className = 'nav-dot off';
-    document.getElementById('navConn').textContent = 'Reconnecting...';
+    document.getElementById('navConn').textContent = '{{ t("reconnecting") }}';
   };
   ['alert','conversation','message_sent','status'].forEach(evt => {
     _es.addEventListener(evt, e => {
