@@ -90,7 +90,7 @@ class CognitiveExercises:
         self.game_state["turns"] += 1
         if self.game_state["turns"] >= 8:
             self.active_game = None
-            return f"Great one! That was a fun round — you came up with some really creative connections. Want to play again or try something else?"
+            return "Great one! That was a fun round — you came up with some really creative connections. Want to play again or try something else?"
 
         # Use their word to generate a response
         words = user_input.strip().split()

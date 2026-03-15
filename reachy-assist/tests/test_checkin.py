@@ -24,12 +24,12 @@ class TestDailyCheckIn:
 
     def test_process_bad_answer(self, checkin):
         checkin.start()
-        response = checkin.process_answer("Terrible, I didn't sleep at all")
+        checkin.process_answer("Terrible, I didn't sleep at all")
         assert checkin.results.get("sleep") == "bad"
 
     def test_process_neutral_answer(self, checkin):
         checkin.start()
-        response = checkin.process_answer("It was alright I guess")
+        checkin.process_answer("It was alright I guess")
         assert checkin.results.get("sleep") == "neutral"
 
     def test_full_checkin_flow(self, checkin):

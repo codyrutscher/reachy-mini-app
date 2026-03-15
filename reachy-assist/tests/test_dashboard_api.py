@@ -1,7 +1,8 @@
 """Tests for the caregiver dashboard Flask API."""
 
 import pytest
-import sys, os
+import sys
+import os
 import json
 
 # Add dashboard to path

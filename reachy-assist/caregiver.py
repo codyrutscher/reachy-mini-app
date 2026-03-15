@@ -134,7 +134,7 @@ class CaregiverAlerts:
                 method="POST",
             )
             urllib.request.urlopen(req, timeout=5)
-            print(f"[ALERT] Sent to dashboard")
+            print("[ALERT] Sent to dashboard")
         except Exception as e:
             print(f"[ALERT] Dashboard unreachable: {e}")
 

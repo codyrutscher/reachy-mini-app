@@ -31,7 +31,7 @@ class TestCognitiveExercises:
     def test_word_association_ends_after_8_turns(self, cognitive):
         cognitive.start_game("word association")
         for i in range(8):
-            result = cognitive.play_turn(f"word{i}")
+            cognitive.play_turn(f"word{i}")
         assert not cognitive.is_active
 
     def test_start_trivia(self, cognitive):
@@ -67,7 +67,7 @@ class TestCognitiveExercises:
     def test_categories_done(self, cognitive):
         cognitive.start_game("categories")
         cognitive.play_turn("apple")
-        result = cognitive.play_turn("done")
+        cognitive.play_turn("done")
         assert not cognitive.is_active
 
     def test_start_memory_game(self, cognitive):

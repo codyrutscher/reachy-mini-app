@@ -429,7 +429,8 @@ def delete_note(nid):
 
 @app.route("/api/export/csv", methods=["GET"])
 def export_csv():
-    import csv, io
+    import csv
+    import io
     activities = db.get_activity_log(limit=1000)
     output = io.StringIO()
     writer = csv.writer(output)
@@ -442,7 +443,8 @@ def export_csv():
 
 @app.route("/api/export/alerts-csv", methods=["GET"])
 def export_alerts_csv():
-    import csv, io
+    import csv
+    import io
     alerts = db.get_alerts(limit=1000)
     output = io.StringIO()
     writer = csv.writer(output)
