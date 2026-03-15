@@ -31,3 +31,8 @@ Thumbs.db
 
 # Environment
 .env
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/

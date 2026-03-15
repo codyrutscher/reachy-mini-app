@@ -2,6 +2,7 @@
 mood tracking, safety awareness, and eldercare intelligence."""
 
 import os
+import re
 import random
 from config import (
     SYSTEM_PROMPT, RESPONSES, SAFETY_KEYWORDS, LONELINESS_KEYWORDS,
@@ -10,7 +11,23 @@ from config import (
 
 
 class Brain:
-    """LLM-powered conversation engine with emotional memory and safety awareness."""
+    """LLM-powered conversation engine with emotional memory, safety awareness,
+    and persistent conversation memory that learns about the user over time."""
+
+    # Patterns for extracting personal facts from conversation
+    _FACT_PATTERNS = [
+        # Family
+        (r"my (daughter|son|wife|husband|sister|brother|mother|father|grandchild|grandson|granddaughter|nephew|niece|aunt|uncle|cousin)\b.*?(?:is |named |called |'s name is )(\w+)", "family"),
+        (r"my (daughter|son|wife|husband|sister|brother|mother|father|grandchild|grandson|granddaughter)\b.*?(visits?|comes?|calls?|lives?)", "family"),
+        (r"my (dog|cat|bird|pet|fish|rabbit|parrot)\b.*?(?:is |named |called |'s name is )(\w+)", "pet"),
+        (r"i have a (dog|cat|bird|pet|fish|rabbit|parrot)\b.*?(?:named |called )(\w+)", "pet"),
+        # Personal history
+        (r"i (?:used to be|was|worked as|retired from being) (?:a |an )?([\w\s]+?)(?:\.|,|!|\?|$)", "career"),
+        (r"i (?:love|enjoy|like|adore) ([\w\s]+?)(?:\.|,|!|\?|$)", "interest"),
+        (r"my favorite ([\w\s]+?) is ([\w\s]+?)(?:\.|,|!|\?|$)", "preference"),
+        (r"i (?:live|lived|grew up) (?:in|at|near) ([\w\s]+?)(?:\.|,|!|\?|$)", "location"),
+        (r"i'm (\d+) years old", "age"),
+    ]
 
     def __init__(self, backend: str = "ollama", profile_prompt: str = ""):
         self.backend = backend
@@ -26,6 +43,8 @@ class Brain:
         self.user_facts = []  # things we've learned about the user
         self.consecutive_sad = 0
         self.session_start = True
+        self._interaction_count = 0
+        self._topics_discussed = []
 
         if backend == "openai":
             from openai import OpenAI
@@ -134,8 +153,9 @@ class Brain:
         return False
 
     def _track_mood(self, emotion: str, text: str):
-        """Track emotional trajectory over the conversation."""
+        """Track emotional trajectory and extract personal facts."""
         self.mood_history.append(emotion)
+        self._interaction_count += 1
 
         if emotion == "sadness":
             self.consecutive_sad += 1
@@ -153,6 +173,46 @@ class Brain:
                         self.user_name = name.capitalize()
                         print(f"[BRAIN] Learned user name: {self.user_name}")
 
+        # Extract personal facts from conversation
+        self._extract_facts(text)
+
+    def _extract_facts(self, text: str):
+        """Extract personal facts from user's speech using pattern matching."""
+        lower = text.lower()
+
+        # Simple keyword-based fact extraction (works without LLM)
+        fact_triggers = {
+            "family": ["my daughter", "my son", "my wife", "my husband",
+                        "my sister", "my brother", "my mother", "my father",
+                        "my grandchild", "my grandson", "my granddaughter"],
+            "pet": ["my dog", "my cat", "my bird", "my pet", "my rabbit",
+                    "i have a dog", "i have a cat", "i have a bird", "i have a pet"],
+            "career": ["i used to be", "i was a", "i worked as", "i retired from",
+                        "i used to work"],
+            "interest": ["i love", "i enjoy", "i like", "my hobby is",
+                          "i'm passionate about"],
+            "preference": ["my favorite", "i prefer", "i always liked"],
+            "location": ["i live in", "i lived in", "i grew up in",
+                          "i'm from", "i am from"],
+            "health": ["i have diabetes", "i have arthritis", "my back hurts",
+                        "i take medication for", "i was diagnosed with"],
+        }
+
+        for category, triggers in fact_triggers.items():
+            for trigger in triggers:
+                if trigger in lower:
+                    # Extract the relevant sentence fragment
+                    idx = lower.index(trigger)
+                    # Get up to 80 chars from the trigger point
+                    snippet = text[idx:idx + 80].split(".")[0].split("!")[0].split("?")[0].strip()
+                    if snippet and snippet not in self.user_facts:
+                        self.user_facts.append(snippet)
+                        print(f"[BRAIN] Learned fact ({category}): {snippet}")
+                        # Keep max 20 facts
+                        if len(self.user_facts) > 20:
+                            self.user_facts = self.user_facts[-20:]
+                    break  # one fact per category per message
+
     def _build_context(self, emotion: str, loneliness: bool, confusion: bool) -> str:
         """Build a rich context string for the LLM."""
         parts = [f"User seems {emotion}"]
@@ -166,6 +226,11 @@ class Brain:
         if self.user_name:
             parts.append(f"user's name is {self.user_name}")
 
+        # Include learned facts for personalized responses
+        if self.user_facts:
+            facts_str = "; ".join(self.user_facts[-5:])  # last 5 facts
+            parts.append(f"things you remember about them: {facts_str}")
+
         # Mood trajectory
         if len(self.mood_history) >= 3:
             recent = self.mood_history[-3:]
@@ -173,6 +238,12 @@ class Brain:
                 parts.append("mood is improving — acknowledge the positive shift")
             elif recent[0] == "joy" and recent[-1] in ("sadness", "fear"):
                 parts.append("mood is declining — be extra attentive")
+
+        # Conversation depth — adjust style based on how long we've been talking
+        if self._interaction_count > 15:
+            parts.append("you've been chatting for a while — feel free to be more personal and relaxed")
+        elif self._interaction_count < 3:
+            parts.append("conversation just started — be warm and welcoming")
 
         return "; ".join(parts)
 
@@ -197,6 +268,31 @@ class Brain:
         if self.consecutive_sad >= 3:
             return "I've noticed you've been having a tough time. I really care about how you're feeling. Would it help to talk to someone you trust about this?"
 
+        # Use learned facts to personalize responses when possible
+        if self.user_facts and emotion == "neutral" and random.random() < 0.3:
+            fact = random.choice(self.user_facts)
+            return f"You know, I was thinking about what you told me — {fact}. Would you like to tell me more about that?"
+
         # Regular emotion-based response with variety
         options = RESPONSES.get(emotion, RESPONSES["neutral"])
         return random.choice(options)
+
+    def get_session_summary(self) -> dict:
+        """Generate a summary of the current conversation session."""
+        mood_counts = {}
+        for m in self.mood_history:
+            mood_counts[m] = mood_counts.get(m, 0) + 1
+        dominant_mood = max(mood_counts, key=mood_counts.get) if mood_counts else "unknown"
+
+        return {
+            "interactions": self._interaction_count,
+            "dominant_mood": dominant_mood,
+            "mood_distribution": mood_counts,
+            "user_name": self.user_name,
+            "facts_learned": len(self.user_facts),
+            "user_facts": self.user_facts[:],
+            "consecutive_sad_peak": max(
+                (sum(1 for _ in g) for k, g in __import__("itertools").groupby(self.mood_history) if k == "sadness"),
+                default=0,
+            ),
+        }

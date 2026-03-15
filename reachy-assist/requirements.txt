@@ -7,3 +7,7 @@ opencv-python
 facenet-pytorch
 hsemotion-onnx
 openai
+
+# Testing
+pytest
+pytest-cov
