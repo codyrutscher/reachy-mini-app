@@ -1,6 +1,7 @@
 """Caregiver Dashboard — receives alerts from Reachy, displays them in
 real-time, and lets caregivers send messages back through the robot.
-All data persisted in SQLite. Includes auth, scheduling, med tracking."""
+All data persisted in SQLite. Includes auth, scheduling, med tracking,
+shift handoffs, family portal, vitals monitoring, and i18n."""
 
 import hashlib
 import json
@@ -16,6 +17,31 @@ import db
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "reachy-care-secret-key-change-me")
 CORS(app)
+
+# Try bcrypt, fall back to sha256
+try:
+    import bcrypt
+    _USE_BCRYPT = True
+    print("[AUTH] Using bcrypt for password hashing")
+except ImportError:
+    _USE_BCRYPT = False
+    print("[AUTH] bcrypt not installed, using sha256 (install bcrypt for production)")
+
+
+def _hash_password(password):
+    if _USE_BCRYPT:
+        return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def _check_password(password, stored_hash):
+    if _USE_BCRYPT:
+        try:
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        except Exception:
+            # Fall back to sha256 check for legacy hashes
+            return hashlib.sha256(password.encode()).hexdigest() == stored_hash
+    return hashlib.sha256(password.encode()).hexdigest() == stored_hash
 
 # Serve PWA static files
 @app.route("/manifest.json")
@@ -37,7 +63,7 @@ db.init_db()
 
 # Create default admin user if none exist
 if not db.get_users():
-    pw = hashlib.sha256("admin".encode()).hexdigest()
+    pw = _hash_password("admin")
     db.add_user("admin", pw, role="admin", name="Administrator")
     print("[AUTH] Default user created: admin / admin")
 
@@ -98,9 +124,8 @@ def login_action():
     data = request.get_json(force=True)
     username = data.get("username", "")
     password = data.get("password", "")
-    pw_hash = hashlib.sha256(password.encode()).hexdigest()
     user = db.get_user(username)
-    if user and user["password_hash"] == pw_hash:
+    if user and _check_password(password, user["password_hash"]):
         session["user"] = {"username": username, "role": user["role"], "name": user["name"]}
         db.add_activity("login", f"{username} logged in")
         return jsonify({"status": "ok"})
@@ -441,6 +466,173 @@ def delete_note(nid):
     db.delete_note(nid)
     return jsonify({"status": "ok"})
 
+@app.route("/family")
+def family_page():
+    return render_template("family.html", active_page="family")
+
+# ── Shift Handoff API ──────────────────────────────────────────────
+
+@app.route("/api/handoff", methods=["POST"])
+@login_required
+def create_handoff():
+    user = session.get("user", {})
+    data = request.get_json(force=True)
+    handoff = db.create_shift_handoff(
+        from_caregiver=user.get("name", user.get("username", "Unknown")),
+        to_caregiver=data.get("to_caregiver", ""),
+    )
+    db.add_activity("shift_handoff", f"Handoff by {handoff['from_caregiver']}")
+    return jsonify(handoff), 201
+
+@app.route("/api/handoff", methods=["GET"])
+def get_handoffs():
+    return jsonify(db.get_shift_handoffs())
+
+# ── Family Portal API ──────────────────────────────────────────────
+
+@app.route("/api/family/messages", methods=["GET"])
+def get_family_messages():
+    pid = request.args.get("patient_id", type=int)
+    return jsonify(db.get_family_messages(patient_id=pid))
+
+@app.route("/api/family/messages", methods=["POST"])
+def post_family_message():
+    data = request.get_json(force=True)
+    msg = db.add_family_message(
+        family_member=data.get("family_member", "Family"),
+        message=data.get("message", ""),
+        patient_id=data.get("patient_id", 0),
+        message_type=data.get("type", "text"),
+    )
+    # Also queue as a robot message so Reachy speaks it
+    db.add_message(text=f"Message from your family: {msg['message']}", priority="normal")
+    db.add_activity("family_message", f"{msg['family_member']}: {msg['message'][:50]}")
+    notify_listeners("family_message", msg)
+    return jsonify(msg), 201
+
+@app.route("/api/family/messages/<int:mid>/read", methods=["POST"])
+def mark_family_read(mid):
+    db.mark_family_message_read(mid)
+    return jsonify({"status": "ok"})
+
+# ── Vitals API ─────────────────────────────────────────────────────
+
+@app.route("/api/vitals", methods=["GET"])
+def get_vitals():
+    pid = request.args.get("patient_id", 0, type=int)
+    return jsonify(db.get_vitals_history(patient_id=pid))
+
+@app.route("/api/vitals", methods=["POST"])
+def post_vitals():
+    data = request.get_json(force=True)
+    db.add_vitals(
+        heart_rate=data.get("heart_rate"),
+        spo2=data.get("spo2"),
+        bp_sys=data.get("bp_systolic"),
+        bp_dia=data.get("bp_diastolic"),
+        temperature=data.get("temperature"),
+        source=data.get("source", "device"),
+        patient_id=data.get("patient_id", 0),
+    )
+    # Check for alerts
+    alerts = []
+    hr = data.get("heart_rate")
+    if hr and (hr < 50 or hr > 120):
+        alerts.append(f"Abnormal heart rate: {hr} bpm")
+    spo2 = data.get("spo2")
+    if spo2 and spo2 < 90:
+        alerts.append(f"Low oxygen: {spo2}%")
+    for alert_msg in alerts:
+        alert = db.add_alert("VITALS_ALERT", alert_msg, details=json.dumps(data))
+        notify_listeners("alert", alert)
+    return jsonify({"status": "ok", "alerts": alerts})
+
+@app.route("/api/vitals/latest", methods=["GET"])
+def get_latest_vitals():
+    pid = request.args.get("patient_id", 0, type=int)
+    v = db.get_latest_vitals(patient_id=pid)
+    return jsonify(v or {})
+
+# ── User Management API ────────────────────────────────────────────
+
+@app.route("/api/users", methods=["GET"])
+@login_required
+def get_users():
+    return jsonify(db.get_users())
+
+@app.route("/api/users", methods=["POST"])
+@login_required
+def create_user():
+    data = request.get_json(force=True)
+    pw = _hash_password(data.get("password", "changeme"))
+    ok = db.add_user(
+        username=data.get("username", ""),
+        password_hash=pw,
+        role=data.get("role", "caregiver"),
+        name=data.get("name", ""),
+    )
+    if ok:
+        return jsonify({"status": "ok"}), 201
+    return jsonify({"error": "Username already exists"}), 409
+
+@app.route("/api/users/<int:uid>", methods=["DELETE"])
+@login_required
+def remove_user(uid):
+    db.delete_user(uid)
+    return jsonify({"status": "ok"})
+
+@app.route("/api/change-password", methods=["POST"])
+@login_required
+def change_password():
+    data = request.get_json(force=True)
+    user = session.get("user", {})
+    username = user.get("username", "")
+    old_pw = data.get("old_password", "")
+    new_pw = data.get("new_password", "")
+    db_user = db.get_user(username)
+    if not db_user or not _check_password(old_pw, db_user["password_hash"]):
+        return jsonify({"error": "Current password is incorrect"}), 401
+    db.update_user_password(username, _hash_password(new_pw))
+    return jsonify({"status": "ok"})
+
+# ── Patient Trends API ─────────────────────────────────────────────
+
+@app.route("/api/trends/mood", methods=["GET"])
+def mood_trends():
+    """Get mood data grouped by day for charting."""
+    conn = db._get_conn()
+    rows = conn.execute("""
+        SELECT date(time) as day, mood, COUNT(*) as cnt
+        FROM mood_history
+        GROUP BY day, mood
+        ORDER BY day
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/trends/activity", methods=["GET"])
+def activity_trends():
+    """Get activity counts by day."""
+    conn = db._get_conn()
+    rows = conn.execute("""
+        SELECT date(time) as day, action, COUNT(*) as cnt
+        FROM activity_log
+        GROUP BY day, action
+        ORDER BY day
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+@app.route("/api/trends/medications", methods=["GET"])
+def med_trends():
+    """Get medication adherence by day."""
+    conn = db._get_conn()
+    rows = conn.execute("""
+        SELECT date(time) as day, status, COUNT(*) as cnt
+        FROM med_log
+        GROUP BY day, status
+        ORDER BY day
+    """).fetchall()
+    return jsonify([dict(r) for r in rows])
+
 # ── Export API ──────────────────────────────────────────────────────
 
 @app.route("/api/export/csv", methods=["GET"])
@@ -481,6 +673,19 @@ def export_report():
     return resp
 
 # ── SSE ─────────────────────────────────────────────────────────────
+
+@app.route("/api/i18n", methods=["GET"])
+def get_translations():
+    from i18n import get_all_translations, available_languages
+    lang = request.args.get("lang", "en")
+    return jsonify({"translations": get_all_translations(lang), "languages": available_languages()})
+
+@app.route("/api/i18n/set", methods=["POST"])
+def set_lang():
+    from i18n import set_language
+    data = request.get_json(force=True)
+    set_language(data.get("lang", "en"))
+    return jsonify({"status": "ok"})
 
 @app.route("/stream")
 def stream():

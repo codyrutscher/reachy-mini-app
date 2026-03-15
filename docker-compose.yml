@@ -1,0 +1,33 @@
+version: "3.8"
+
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "5555:5555"
+    volumes:
+      - dashboard-data:/app/data
+    environment:
+      - REACHY_DB=/app/data/reachy.db
+      - SECRET_KEY=${SECRET_KEY:-reachy-care-production-key}
+    restart: unless-stopped
+
+  # Nginx reverse proxy with HTTPS (optional)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      - dashboard
+    restart: unless-stopped
+    profiles:
+      - production
+
+volumes:
+  dashboard-data:

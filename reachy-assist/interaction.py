@@ -415,6 +415,21 @@ class InteractionLoop:
                 }
                 return move_responses.get(action, "There you go!")
 
+        # ── Smart home control ──────────────────────────────────────
+        from smart_home import parse_smart_home_command
+        sh_response, sh_handled = parse_smart_home_command(text)
+        if sh_handled:
+            self._log_activity("smart_home", text[:80])
+            return sh_response
+
+        # ── Vitals check ──────────────────────────────────────────
+        if any(w in lower for w in ["my vitals", "check my vitals", "heart rate",
+                                     "blood pressure", "oxygen level", "temperature",
+                                     "how's my health", "health check", "pulse"]):
+            from vitals import get_vitals_summary
+            self._log_activity("vitals_check", "Patient asked for vitals")
+            return get_vitals_summary()
+
         # ── Stop / quit active sessions ────────────────────────────
         if any(w in lower for w in ["stop", "quit", "enough", "done", "exit", "no more"]):
             if self.cognitive.is_active:
@@ -457,6 +472,11 @@ class InteractionLoop:
                 "- 'good morning' / 'goodnight'\n"
                 "- 'took my medication' — confirm meds\n"
                 "- 'water reminder' — hydration\n"
+                "- 'check my vitals' — health readings\n"
+                "- 'lights on/off' — smart home control\n"
+                "- 'set temperature' — thermostat\n"
+                "- 'open/close blinds' — curtains\n"
+                "- 'bedtime mode' — smart home scene\n"
                 "- 'dance' / 'stretch' / 'celebrate' / 'wiggle'\n"
                 "- 'stop' — end any active session\n"
                 "- 'help' — show this menu"

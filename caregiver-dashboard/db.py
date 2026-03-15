@@ -151,6 +151,40 @@ def init_db():
             author TEXT DEFAULT '',
             time TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS shift_handoffs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_caregiver TEXT NOT NULL,
+            to_caregiver TEXT DEFAULT '',
+            summary TEXT NOT NULL,
+            alerts_summary TEXT DEFAULT '',
+            mood_summary TEXT DEFAULT '',
+            med_summary TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS family_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            family_member TEXT NOT NULL,
+            patient_id INTEGER DEFAULT 0,
+            message TEXT NOT NULL,
+            message_type TEXT DEFAULT 'text',
+            read INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS vitals_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id INTEGER DEFAULT 0,
+            heart_rate INTEGER,
+            spo2 INTEGER,
+            bp_systolic INTEGER,
+            bp_diastolic INTEGER,
+            temperature REAL,
+            source TEXT DEFAULT 'simulated',
+            created_at TEXT NOT NULL
+        );
     """)
     # Initialize patient status defaults
     defaults = {"mood": "unknown", "last_active": "", "last_said": "",
@@ -661,4 +695,158 @@ def get_notes(patient_id=None, limit=50):
 def delete_note(note_id):
     conn = _get_conn()
     conn.execute("DELETE FROM caregiver_notes WHERE id=?", (note_id,))
+    conn.commit()
+
+
+# ── Shift Handoffs ──────────────────────────────────────────────────
+
+def create_shift_handoff(from_caregiver, to_caregiver=""):
+    """Auto-generate a shift handoff report from today's data."""
+    conn = _get_conn()
+    today = datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Alerts summary
+    alert_rows = conn.execute(
+        "SELECT type, message FROM alerts WHERE time LIKE ? ORDER BY id DESC LIMIT 10",
+        (f"{today}%",),
+    ).fetchall()
+    alerts_summary = "; ".join(f"{r['type']}: {r['message']}" for r in alert_rows) if alert_rows else "No alerts"
+
+    # Mood summary
+    mood_rows = conn.execute(
+        "SELECT mood, COUNT(*) as cnt FROM mood_history WHERE time LIKE ? GROUP BY mood ORDER BY cnt DESC",
+        (f"{today}%",),
+    ).fetchall()
+    mood_summary = ", ".join(f"{r['mood']}({r['cnt']})" for r in mood_rows) if mood_rows else "No mood data"
+
+    # Medication summary
+    med_taken = conn.execute(
+        "SELECT COUNT(*) FROM med_log WHERE time LIKE ? AND status='taken'", (f"{today}%",)
+    ).fetchone()[0]
+    med_missed = conn.execute(
+        "SELECT COUNT(*) FROM med_log WHERE time LIKE ? AND status='missed'", (f"{today}%",)
+    ).fetchone()[0]
+    med_summary = f"{med_taken} taken, {med_missed} missed"
+
+    # Recent notes
+    note_rows = conn.execute(
+        "SELECT note, author FROM caregiver_notes WHERE time LIKE ? ORDER BY id DESC LIMIT 5",
+        (f"{today}%",),
+    ).fetchall()
+    notes = "; ".join(f"{r['author']}: {r['note']}" for r in note_rows) if note_rows else ""
+
+    # Activity count
+    activity_count = conn.execute(
+        "SELECT COUNT(*) FROM activity_log WHERE time LIKE ?", (f"{today}%",)
+    ).fetchone()[0]
+
+    summary = (
+        f"Shift handoff — {today}\n"
+        f"From: {from_caregiver}\n"
+        f"Activities: {activity_count} logged\n"
+        f"Alerts: {alerts_summary}\n"
+        f"Moods: {mood_summary}\n"
+        f"Medications: {med_summary}\n"
+    )
+    if notes:
+        summary += f"Notes: {notes}\n"
+
+    cur = conn.execute(
+        """INSERT INTO shift_handoffs
+           (from_caregiver, to_caregiver, summary, alerts_summary, mood_summary, med_summary, notes, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (from_caregiver, to_caregiver, summary, alerts_summary, mood_summary, med_summary, notes, now),
+    )
+    conn.commit()
+    return {
+        "id": cur.lastrowid, "from_caregiver": from_caregiver,
+        "to_caregiver": to_caregiver, "summary": summary,
+        "created_at": now,
+    }
+
+
+def get_shift_handoffs(limit=20):
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM shift_handoffs ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Family Messages ─────────────────────────────────────────────────
+
+def add_family_message(family_member, message, patient_id=0, message_type="text"):
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur = conn.execute(
+        "INSERT INTO family_messages (family_member, patient_id, message, message_type, created_at) VALUES (?,?,?,?,?)",
+        (family_member, patient_id, message, message_type, now),
+    )
+    conn.commit()
+    return {"id": cur.lastrowid, "family_member": family_member, "message": message, "created_at": now}
+
+
+def get_family_messages(patient_id=None, limit=50):
+    conn = _get_conn()
+    if patient_id is not None:
+        rows = conn.execute(
+            "SELECT * FROM family_messages WHERE patient_id=? ORDER BY id DESC LIMIT ?",
+            (patient_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM family_messages ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_family_message_read(msg_id):
+    conn = _get_conn()
+    conn.execute("UPDATE family_messages SET read=1 WHERE id=?", (msg_id,))
+    conn.commit()
+
+
+# ── Vitals Log ──────────────────────────────────────────────────────
+
+def add_vitals(heart_rate=None, spo2=None, bp_sys=None, bp_dia=None,
+               temperature=None, source="simulated", patient_id=0):
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        """INSERT INTO vitals_log
+           (patient_id, heart_rate, spo2, bp_systolic, bp_diastolic, temperature, source, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (patient_id, heart_rate, spo2, bp_sys, bp_dia, temperature, source, now),
+    )
+    conn.commit()
+
+
+def get_vitals_history(patient_id=0, limit=50):
+    conn = _get_conn()
+    rows = conn.execute(
+        "SELECT * FROM vitals_log WHERE patient_id=? ORDER BY id DESC LIMIT ?",
+        (patient_id, limit),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_latest_vitals(patient_id=0):
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM vitals_log WHERE patient_id=? ORDER BY id DESC LIMIT 1",
+        (patient_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_user_password(username, new_hash):
+    conn = _get_conn()
+    conn.execute("UPDATE users SET password_hash=? WHERE username=?", (new_hash, username))
+    conn.commit()
+
+
+def update_user_role(username, role):
+    conn = _get_conn()
+    conn.execute("UPDATE users SET role=? WHERE username=?", (role, username))
     conn.commit()

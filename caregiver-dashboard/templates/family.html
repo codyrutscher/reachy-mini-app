@@ -1,0 +1,144 @@
+{% extends "_base.html" %}
+{% block title %}Family Portal — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">👨‍👩‍👧 Family Portal</div>
+      <div class="page-subtitle">Stay connected with your loved one through Reachy</div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">💬 Send a Message</div>
+        <div class="card-muted">Reachy will read it aloud to your loved one</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Your Name</label>
+        <input class="form-input" id="familyName" placeholder="e.g. Sarah (daughter)" value="">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Message</label>
+        <textarea class="form-input" id="familyMsg" rows="3" placeholder="Write a loving message..."></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="sendFamilyMsg()">Send Message via Reachy</button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">❤️ How They're Doing</div>
+      </div>
+      <div id="patientSummary" style="padding:10px 0;">
+        <div style="text-align:center;color:var(--muted);padding:20px;">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">📨 Message History</div></div>
+      <div id="msgHistory" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="empty" id="msgEmpty"><div class="empty-icon">📨</div><p>No messages yet.</p></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">😊 Recent Mood</div></div>
+      <div id="moodInfo" style="max-height:400px;overflow-y:auto;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">🩺 Latest Vitals</div></div>
+    <div id="vitalsInfo" class="grid-4" style="padding:10px 0;"></div>
+    <div class="empty" id="vitalsEmpty"><div class="empty-icon">🩺</div><p>No vitals data yet.</p></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var MOOD_EMOJI={joy:'😊',sadness:'😢',anger:'😠',fear:'😨',surprise:'😲',neutral:'😐',unknown:'❓'};
+
+async function loadAll(){
+  var [msgs,moods,status,vitals]=await Promise.all([
+    fetch('/api/family/messages').then(r=>r.json()),
+    fetch('/api/mood-history').then(r=>r.json()),
+    fetch('/api/status').then(r=>r.json()),
+    fetch('/api/vitals/latest').then(r=>r.json()),
+  ]);
+  renderMessages(msgs);renderMoods(moods);renderSummary(status,moods);renderVitals(vitals);
+}
+
+function renderMessages(msgs){
+  var el=document.getElementById('msgHistory'),empty=document.getElementById('msgEmpty');
+  if(!msgs.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=msgs.map(function(m){
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="display:flex;justify-content:space-between;">'+
+      '<span style="font-size:13px;font-weight:500;">'+m.family_member+'</span>'+
+      '<span style="font-size:11px;color:var(--muted);">'+m.created_at+'</span></div>'+
+      '<div style="font-size:14px;margin-top:4px;">'+m.message+'</div></div>';
+  }).join('');
+}
+
+function renderMoods(moods){
+  var el=document.getElementById('moodInfo');
+  if(!moods.length){el.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">No mood data yet.</div>';return;}
+  el.innerHTML=moods.slice(-20).reverse().map(function(m){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:18px;">'+(MOOD_EMOJI[m.mood]||'❓')+'</span>'+
+      '<span style="font-size:13px;flex:1;">'+m.mood+'</span>'+
+      '<span style="font-size:11px;color:var(--muted);">'+m.time+'</span></div>';
+  }).join('');
+}
+
+function renderSummary(status,moods){
+  var el=document.getElementById('patientSummary');
+  var name=status.name||'Your loved one';
+  var mood=status.mood||'unknown';
+  var lastActive=status.last_active||'Unknown';
+  var counts={};moods.forEach(function(m){counts[m.mood]=(counts[m.mood]||0)+1;});
+  var dominant=Object.entries(counts).sort(function(a,b){return b[1]-a[1];})[0];
+  var dominantMood=dominant?dominant[0]:'unknown';
+
+  el.innerHTML='<div style="text-align:center;">'+
+    '<div style="font-size:48px;margin-bottom:8px;">'+(MOOD_EMOJI[mood]||'❓')+'</div>'+
+    '<div style="font-size:18px;font-weight:600;">'+name+'</div>'+
+    '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Current mood: '+mood+'</div>'+
+    '<div style="font-size:13px;color:var(--muted);">Last active: '+lastActive+'</div>'+
+    '<div style="font-size:13px;color:var(--muted);">Most common mood today: '+dominantMood+'</div>'+
+    '</div>';
+}
+
+function renderVitals(v){
+  var el=document.getElementById('vitalsInfo'),empty=document.getElementById('vitalsEmpty');
+  if(!v||!v.id){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=[
+    {icon:'❤️',label:'Heart Rate',val:(v.heart_rate||'--')+' bpm'},
+    {icon:'🫁',label:'SpO2',val:(v.spo2||'--')+'%'},
+    {icon:'🩸',label:'Blood Pressure',val:(v.bp_systolic||'--')+'/'+(v.bp_diastolic||'--')},
+    {icon:'🌡️',label:'Temperature',val:(v.temperature||'--')+'°F'},
+  ].map(function(s){
+    return '<div class="stat"><div class="stat-icon">'+s.icon+'</div>'+
+      '<div class="stat-num" style="font-size:18px;">'+s.val+'</div>'+
+      '<div class="stat-label">'+s.label+'</div></div>';
+  }).join('');
+}
+
+async function sendFamilyMsg(){
+  var name=document.getElementById('familyName').value.trim()||'Family';
+  var msg=document.getElementById('familyMsg').value.trim();
+  if(!msg)return alert('Please write a message');
+  await fetch('/api/family/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({family_member:name,message:msg})});
+  document.getElementById('familyMsg').value='';
+  loadAll();
+}
+
+loadAll();
+</script>
+{% endblock %}

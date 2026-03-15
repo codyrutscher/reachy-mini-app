@@ -11,6 +11,15 @@ openai
 # RAG memory
 # OpenAI embeddings preferred; hash-based fallback if no API key
 
+# Fall detection (optional)
+# mediapipe
+
+# Smart home (optional — needs Home Assistant)
+# No extra deps, uses urllib
+
+# Vitals monitoring (optional — BLE devices)
+# bleak
+
 # Testing
 pytest
 pytest-cov

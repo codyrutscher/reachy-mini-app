@@ -85,7 +85,7 @@ class TestBrainContext:
 
     def test_confusion_in_context(self, brain_fallback):
         context = brain_fallback._build_context("neutral", loneliness=False, confusion=True)
-        assert "confused" in context.lower() or "gentle" in context.lower()
+        assert "confusion" in context.lower() or "gentle" in context.lower() or "gently" in context.lower()
 
     def test_mood_trajectory_improving(self, brain_fallback):
         brain_fallback.mood_history = ["sadness", "neutral", "joy"]

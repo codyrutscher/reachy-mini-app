@@ -27,6 +27,19 @@
 
   <div class="grid-2" style="margin-bottom:18px;">
     <div class="card">
+      <div class="card-header"><div class="card-title">🩺 Vitals History</div></div>
+      <canvas id="vitalsChart" height="180"></canvas>
+      <div id="vitalsLegend" style="margin-top:8px;display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">💊 Medication Adherence</div></div>
+      <canvas id="medChart" height="180"></canvas>
+      <div id="medSummary" style="margin-top:8px;font-size:12px;color:var(--muted);text-align:center;"></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
       <div class="card-header">
         <div class="card-title">📝 Caregiver Notes</div>
         <button class="btn btn-primary btn-sm" onclick="showNoteModal()">+ Add Note</button>
@@ -35,16 +48,26 @@
       <div class="empty" id="notesEmpty"><div class="empty-icon">📝</div><p>No notes yet.</p></div>
     </div>
     <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔄 Shift Handoffs</div>
+        <button class="btn btn-primary btn-sm" onclick="createHandoff()">Create Handoff</button>
+      </div>
+      <div id="handoffList" style="max-height:350px;overflow-y:auto;"></div>
+      <div class="empty" id="handoffEmpty"><div class="empty-icon">🔄</div><p>No handoffs yet.</p></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
       <div class="card-header"><div class="card-title">📋 Check-in History</div></div>
       <div id="checkinList" style="max-height:350px;overflow-y:auto;"></div>
       <div class="empty" id="checkinEmpty"><div class="empty-icon">📋</div><p>No check-ins recorded yet.</p></div>
     </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header"><div class="card-title">🕐 Mood Timeline</div></div>
-    <div id="moodTimeline" style="max-height:300px;overflow-y:auto;"></div>
-    <div class="empty" id="timelineEmpty"><div class="empty-icon">📈</div><p>No mood data yet.</p></div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🕐 Mood Timeline</div></div>
+      <div id="moodTimeline" style="max-height:350px;overflow-y:auto;"></div>
+      <div class="empty" id="timelineEmpty"><div class="empty-icon">📈</div><p>No mood data yet.</p></div>
+    </div>
   </div>
 </div>
 
@@ -72,7 +95,11 @@ async function load(){
   moods=await fetch('/api/mood-history').then(r=>r.json());
   checkins=await fetch('/api/checkin-history').then(r=>r.json());
   notes=await fetch('/api/notes').then(r=>r.json());
+  var handoffs=await fetch('/api/handoff').then(r=>r.json());
+  var vitals=await fetch('/api/vitals').then(r=>r.json());
+  var medLog=await fetch('/api/med-log').then(r=>r.json());
   renderMoodChart();renderMoodSummary();renderTimeline();renderCheckins();renderNotes();
+  renderHandoffs(handoffs);renderVitalsChart(vitals);renderMedChart(medLog);
 }
 
 function renderMoodChart(){
@@ -170,6 +197,78 @@ async function saveNote(){
   document.getElementById('noteText').value='';hideNoteModal();load();
 }
 async function delNote(id){if(!confirm('Delete note?'))return;await fetch('/api/notes/'+id,{method:'DELETE'});load();}
+
+async function createHandoff(){
+  if(!confirm('Create a shift handoff report for today?'))return;
+  await fetch('/api/handoff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+  load();
+}
+
+function renderHandoffs(handoffs){
+  var el=document.getElementById('handoffList'),empty=document.getElementById('handoffEmpty');
+  if(!handoffs.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=handoffs.map(function(h){
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="display:flex;justify-content:space-between;">'+
+      '<span style="font-size:12px;font-weight:500;">From: '+h.from_caregiver+'</span>'+
+      '<span style="font-size:11px;color:var(--muted);">'+h.created_at+'</span></div>'+
+      '<pre style="font-size:12px;margin-top:6px;white-space:pre-wrap;color:var(--muted);background:var(--input-bg);padding:8px;border-radius:6px;">'+h.summary+'</pre></div>';
+  }).join('');
+}
+
+function renderVitalsChart(vitals){
+  var canvas=document.getElementById('vitalsChart');
+  var ctx=canvas.getContext('2d');
+  var w=canvas.width=canvas.parentElement.clientWidth-40;
+  var h=canvas.height=180;
+  ctx.clearRect(0,0,w,h);
+  if(!vitals.length){ctx.fillStyle='#8b8d97';ctx.font='14px sans-serif';ctx.fillText('No vitals data',w/2-40,h/2);return;}
+  var recent=vitals.slice(0,30).reverse();
+  var maxHR=Math.max.apply(null,recent.map(function(v){return v.heart_rate||0;}))||120;
+  var padding=30;
+  var chartW=w-padding*2,chartH=h-padding*2;
+  // Draw HR line
+  ctx.strokeStyle='#ef4444';ctx.lineWidth=2;ctx.beginPath();
+  recent.forEach(function(v,i){
+    var x=padding+i*(chartW/(recent.length-1||1));
+    var y=padding+chartH-(((v.heart_rate||0)/maxHR)*chartH);
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  // Draw SpO2 line
+  ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;ctx.beginPath();
+  recent.forEach(function(v,i){
+    var x=padding+i*(chartW/(recent.length-1||1));
+    var y=padding+chartH-(((v.spo2||0)/100)*chartH);
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  document.getElementById('vitalsLegend').innerHTML=
+    '<span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#ef4444;"></span>Heart Rate</span>'+
+    '<span style="display:flex;align-items:center;gap:4px;"><span style="width:12px;height:3px;background:#3b82f6;"></span>SpO2</span>';
+}
+
+function renderMedChart(medLog){
+  var canvas=document.getElementById('medChart');
+  var ctx=canvas.getContext('2d');
+  var w=canvas.width=canvas.parentElement.clientWidth-40;
+  var h=canvas.height=180;
+  ctx.clearRect(0,0,w,h);
+  if(!medLog.length){ctx.fillStyle='#8b8d97';ctx.font='14px sans-serif';ctx.fillText('No medication data',w/2-50,h/2);return;}
+  var taken=medLog.filter(function(m){return m.status==='taken';}).length;
+  var missed=medLog.filter(function(m){return m.status==='missed';}).length;
+  var total=taken+missed||1;
+  var takenPct=taken/total;
+  // Draw donut chart
+  var cx=w/2,cy=h/2-10,r=60;
+  ctx.lineWidth=16;
+  ctx.strokeStyle='#ef4444';ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle='#22c55e';ctx.beginPath();ctx.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+takenPct*Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#e4e4e7';ctx.font='bold 20px sans-serif';ctx.textAlign='center';
+  ctx.fillText(Math.round(takenPct*100)+'%',cx,cy+7);
+  document.getElementById('medSummary').textContent=taken+' taken, '+missed+' missed ('+Math.round(takenPct*100)+'% adherence)';
+}
 
 load();
 </script>

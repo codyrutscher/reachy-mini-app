@@ -254,16 +254,60 @@ class Brain:
                             self.user_facts = self.user_facts[-20:]
                     break  # one fact per category per message
 
-    def _build_context(self, emotion: str, loneliness: bool, confusion: bool, user_text: str = "") -> str:
-        """Build a rich context string for the LLM, including RAG memories."""
-        parts = [f"User seems {emotion}"]
+    def _get_adaptive_strategy(self, emotion: str, loneliness: bool, confusion: bool) -> str:
+        """Return an emotion-adaptive conversation strategy directive."""
+        # Determine dominant recent mood
+        recent_moods = self.mood_history[-5:] if len(self.mood_history) >= 5 else self.mood_history
+        mood_counts = {}
+        for m in recent_moods:
+            mood_counts[m] = mood_counts.get(m, 0) + 1
+        dominant = max(mood_counts, key=mood_counts.get) if mood_counts else "neutral"
+
+        strategies = {
+            "sadness": (
+                "STRATEGY: Use shorter, gentler sentences. Ask open-ended questions about feelings. "
+                "Don't try to fix — just be present. Offer comfort activities (music, stories, breathing). "
+                "Validate every emotion before suggesting anything."
+            ),
+            "fear": (
+                "STRATEGY: Ground them with calm, steady language. Offer breathing exercises. "
+                "Reassure without dismissing. Use phrases like 'you're safe here' and 'let's take it slow'. "
+                "Avoid introducing new topics — stay focused on their concern."
+            ),
+            "anger": (
+                "STRATEGY: Validate their frustration first. Don't argue or minimize. "
+                "Use phrases like 'that sounds really frustrating' and 'you have every right to feel that way'. "
+                "Only suggest solutions after they feel heard."
+            ),
+            "joy": (
+                "STRATEGY: Match their energy. Ask follow-up questions to let them savor the moment. "
+                "Be playful and warm. Suggest activities they enjoy. Celebrate with them."
+            ),
+            "neutral": (
+                "STRATEGY: Be warm and engaging. Suggest activities based on time of day. "
+                "Ask about their interests. Keep conversation flowing naturally."
+            ),
+        }
+
+        strategy = strategies.get(dominant, strategies["neutral"])
 
         if loneliness:
-            parts.append("showing signs of loneliness")
+            strategy += " LONELINESS DETECTED: Be extra warm and engaged. Ask about social connections. Remind them you enjoy talking."
         if confusion:
-            parts.append("may be confused or disoriented — be extra gentle and patient")
+            strategy += " CONFUSION DETECTED: Use very short sentences. Reorient gently. Don't ask complex questions. Be patient with repetition."
         if self.consecutive_sad >= 3:
-            parts.append("has been sad for several messages — check in on them more deeply")
+            strategy += " SUSTAINED DISTRESS: Gently suggest talking to a caregiver or family member. Offer comfort activities."
+
+        return strategy
+
+    def _build_context(self, emotion: str, loneliness: bool, confusion: bool, user_text: str = "") -> str:
+        """Build a rich context string for the LLM, including RAG memories and adaptive strategy."""
+        parts = [f"User seems {emotion}"]
+
+        # Emotion-adaptive strategy
+        strategy = self._get_adaptive_strategy(emotion, loneliness, confusion)
+        parts.append(strategy)
+
         if self.user_name:
             parts.append(f"user's name is {self.user_name}")
 
