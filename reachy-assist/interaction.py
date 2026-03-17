@@ -8,6 +8,7 @@ import time
 import os
 import json
 import urllib.request
+import threading
 from robot import Robot
 from speech import SpeechEngine
 from emotion import EmotionDetector
@@ -80,9 +81,25 @@ class InteractionLoop:
         from autonomy import AutonomyEngine
         self.autonomy = AutonomyEngine(profile_config=self.profile.get("autonomy", {}))
 
+        # Vector memory (Supabase pgvector)
+        try:
+            import vector_memory as vmem
+            vmem.init()
+        except Exception:
+            pass
+
+        # Knowledge graph
+        try:
+            import knowledge_graph as kg
+            kg.init()
+        except Exception:
+            pass
+
         self._pending_reminder = None
         self._pending_fall_alert = False
         self._pending_vitals_alerts = []
+        self._pending_cg_messages = []
+        self._cg_lock = threading.Lock()
         self._dashboard_url = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
         self._last_interaction = time.time()
         self._inactivity_threshold = 30 * 60  # 30 minutes
@@ -113,7 +130,7 @@ class InteractionLoop:
     # ── Cognitive game score callback ─────────────────────────────
 
     def _on_cognitive_game_end(self, game_type: str, score: float, max_score: float):
-        """Called when a cognitive game finishes — log to patient model."""
+        """Called when a cognitive game finishes — log to patient model + Supabase."""
         try:
             from patient_model import log_cognitive_score, init_model_db
             init_model_db()
@@ -122,11 +139,17 @@ class InteractionLoop:
                                f"{game_type}: {score}/{max_score}")
         except Exception as e:
             print(f"[INFO] Could not log cognitive score: {e}")
+        try:
+            import db_supabase as _db
+            if _db.is_available():
+                _db.save_cognitive_score(game_type, score, max_score)
+        except Exception:
+            pass
 
     # ── Exercise completion callback ──────────────────────────────
 
     def _on_exercise_done(self, exercise_name: str, completed: bool):
-        """Called when a guided exercise finishes — log to patient model."""
+        """Called when a guided exercise finishes — log to patient model + Supabase."""
         try:
             from patient_model import log_exercise, init_model_db
             init_model_db()
@@ -135,6 +158,12 @@ class InteractionLoop:
                                f"{exercise_name} ({'completed' if completed else 'stopped early'})")
         except Exception as e:
             print(f"[INFO] Could not log exercise: {e}")
+        try:
+            import db_supabase as _db
+            if _db.is_available():
+                _db.save_exercise(exercise_name, completed=completed)
+        except Exception:
+            pass
 
     # ── Emotion combining ───────────────────────────────────────────
 
@@ -459,6 +488,16 @@ class InteractionLoop:
             "nod": ["nod", "agree"],
             "shake": ["shake your head", "disagree"],
             "rock": ["rock", "soothe", "calm me"],
+            "excited bounce": ["excited", "so exciting", "i'm excited", "yay"],
+            "comfort pat": ["comfort me", "pat me", "there there", "i need comfort"],
+            "storytelling": ["tell a story", "story mode", "storytelling", "once upon a time"],
+            "exercise demo": ["show me the exercise", "demonstrate", "exercise demo", "show me how"],
+            "music sway": ["sway", "sway to the music", "conduct", "feel the music"],
+            "attention grab": ["hey", "look at me", "pay attention", "over here"],
+            "proud": ["proud", "i did it", "achievement", "accomplished"],
+            "worried": ["worried", "concerned", "are you okay", "is everything okay"],
+            "peek": ["peekaboo", "peek", "boo", "where are you"],
+            "meditation guide": ["guide meditation", "meditation movement", "zen mode"],
         }
         for action, triggers in movement_triggers.items():
             if any(t in lower for t in triggers):
@@ -479,6 +518,16 @@ class InteractionLoop:
                     "nod": "Yes, I agree!",
                     "shake": "Hmm, I'm not so sure about that.",
                     "rock": "There we go... nice and calm.",
+                    "excited bounce": "Wooo! That IS exciting!",
+                    "comfort pat": "It's okay, I'm right here with you.",
+                    "storytelling": "Alright, gather round... let me set the scene!",
+                    "exercise demo": "Here, let me show you how it's done!",
+                    "music sway": "Feel the rhythm... just sway with me!",
+                    "attention grab": "Hey! Over here! I've got something for you.",
+                    "proud": "Look at you! You should be so proud!",
+                    "worried": "Hmm, I'm a little worried... is everything alright?",
+                    "peek": "Peekaboo! Did I surprise you?",
+                    "meditation guide": "Let's find our calm... follow my movements slowly.",
                 }
                 return move_responses.get(action, "There you go!")
 
@@ -743,6 +792,21 @@ class InteractionLoop:
         except Exception:
             return []
 
+    def _start_message_poller(self):
+        """Background thread that polls for caregiver messages every 3s."""
+        def _poll():
+            while True:
+                try:
+                    msgs = self._check_caregiver_messages()
+                    if msgs:
+                        with self._cg_lock:
+                            self._pending_cg_messages.extend(msgs)
+                except Exception:
+                    pass
+                time.sleep(3)
+        t = threading.Thread(target=_poll, daemon=True)
+        t.start()
+
     # ── Medication check from dashboard ────────────────────────────
 
     def _check_medication_reminders(self):
@@ -783,10 +847,14 @@ class InteractionLoop:
         self.robot.connect()
         self.reminders.start()
 
-        # Start camera stream server
+        # Start camera stream server + frame capture
         try:
-            from camera_stream import start_stream_server
-            self._camera_server = start_stream_server(port=5556)
+            if self.robot.start_camera_stream(port=5556):
+                self._camera_server = True
+            else:
+                # Fallback: start server only (no frames until robot connects)
+                from camera_stream import start_stream_server
+                self._camera_server = start_stream_server(port=5556)
         except Exception as e:
             print(f"[INFO] Camera stream not available: {e}")
             self._camera_server = None
@@ -837,6 +905,20 @@ class InteractionLoop:
         # Start autonomy engine
         self.autonomy.start()
 
+        # Start background message poller
+        self._start_message_poller()
+
+        # Startup greeting
+        greeting = random.choice([
+            "Hello! I'm Reachy, your companion. I'm here to help you throughout the day. Say 'help' to see what I can do!",
+            "Hi there! Reachy here, ready to keep you company. Just talk to me anytime!",
+            "Good to see you! I'm Reachy, your assistant. Let me know if you need anything!",
+        ])
+        self.robot.perform("greet")
+        self.speech.speak(greeting)
+        self._log_to_dashboard("reachy", greeting)
+        self._log_activity("greeting", "Startup greeting")
+
         try:
             while True:
                 # Check for pending reminders
@@ -879,8 +961,10 @@ class InteractionLoop:
                     time.sleep(0.5)
                     self.robot.reset()
 
-                # Check for caregiver messages
-                cg_messages = self._check_caregiver_messages()
+                # Check for caregiver messages (from background poller)
+                with self._cg_lock:
+                    cg_messages = self._pending_cg_messages[:]
+                    self._pending_cg_messages.clear()
                 for cg_msg in cg_messages:
                     text = cg_msg.get("text", "")
                     if text:
@@ -888,7 +972,6 @@ class InteractionLoop:
                         prefix = "Message from your caregiver: "
                         self.speech.speak(prefix + text)
                         self._log_to_dashboard("reachy", prefix + text)
-                        time.sleep(0.5)
                         self.robot.reset()
 
                 # Check medication schedule (once per minute)
@@ -922,7 +1005,6 @@ class InteractionLoop:
                 # 1. Listen
                 text = self.speech.listen()
                 if not text:
-                    self.speech.speak("I didn't catch that. Could you try again?")
                     continue
 
                 # Reset inactivity timer on any speech
@@ -941,7 +1023,6 @@ class InteractionLoop:
                     self.speech.speak(response)
                     self._log_to_dashboard("reachy", response)
                     self._update_dashboard_status(mood=emotion)
-                    time.sleep(0.5)
                     self.robot.reset()
                     continue
 
@@ -951,35 +1032,83 @@ class InteractionLoop:
                     self.robot.express("neutral")
                     self.speech.speak(cmd_response)
                     self._log_to_dashboard("reachy", cmd_response)
-                    time.sleep(0.5)
                     self.robot.reset()
                     continue
 
                 # 4. Normal conversation flow
                 text_emotion = self.emotion.detect(text)
 
+                # Face emotion drives robot body language only,
+                # NOT the conversation response
                 face_emotion = ""
                 if self.face_detector:
                     face_emotion = self.face_detector.current_emotion
 
-                emotion = self._combine_emotions(text_emotion, face_emotion)
-                self.robot.express(emotion)
-                self._update_dashboard_status(mood=emotion)
-                self.autonomy.notify_mood(emotion)
+                # Use face for robot expression (body language)
+                display_emotion = self._combine_emotions(text_emotion, face_emotion)
+                self.robot.express(display_emotion)
+                self._update_dashboard_status(mood=display_emotion)
+                self.autonomy.notify_mood(display_emotion)
 
                 # Safety check for caregiver alerts
                 lower = text.lower()
-                self._check_safety_alerts(lower, text, emotion)
+                self._check_safety_alerts(lower, text, display_emotion)
 
+                # Response is based on what they SAID (text_emotion),
+                # not what their face looks like
                 if self.brain:
-                    response = self.brain.think(text, emotion)
+                    response = self.brain.think(text, text_emotion)
                 else:
-                    options = RESPONSES.get(emotion, RESPONSES["neutral"])
+                    options = RESPONSES.get(text_emotion, RESPONSES["neutral"])
                     response = random.choice(options)
+
+                # Track conversation in followups (saves to Supabase)
+                try:
+                    from followups import log_mood, log_conversation, log_conversation_date, remember_mention, track_topic, smart_extract_mentions
+                    log_mood(display_emotion)
+                    log_conversation(text)
+                    log_conversation_date()
+                    remember_mention(text)
+                    track_topic(text)
+                    # LLM-powered extraction for things patterns miss
+                    if self.brain:
+                        smart_extract_mentions(text)
+                except Exception as e:
+                    print(f"[INFO] Followups tracking error: {e}")
+
+                # Store in vector memory (patient turn + bot response)
+                try:
+                    import vector_memory as vmem
+                    if vmem.is_available():
+                        from followups import get_topic
+                        t = get_topic(text)
+                        vmem.store_turn(text, speaker="patient", emotion=display_emotion, topic=t)
+                        vmem.store_bot_response(response, emotion=display_emotion, topic=t)
+                except Exception as e:
+                    print(f"[INFO] Vector memory store error: {e}")
+
+                # Extract entities and relationships for knowledge graph
+                try:
+                    import knowledge_graph as kg
+                    if kg.is_available() and self.brain:
+                        kg.extract_and_store(text)
+                except Exception as e:
+                    print(f"[INFO] Knowledge graph error: {e}")
+
+                # Run temporal pattern analysis every 10 interactions
+                if self.brain and self.brain._interaction_count % 10 == 0 and self.brain._interaction_count > 0:
+                    try:
+                        import temporal_patterns as tp
+                        findings = tp.analyze()
+                        # Alert caregiver for warnings
+                        for f in findings:
+                            if f["severity"] == "warning":
+                                self.caregiver.alert("PATTERN_DETECTED", f["description"])
+                    except Exception as e:
+                        print(f"[INFO] Temporal analysis error: {e}")
 
                 self.speech.speak(response)
                 self._log_to_dashboard("reachy", response)
-                time.sleep(0.5)
                 self.robot.reset()
 
         except KeyboardInterrupt:
@@ -996,6 +1125,37 @@ class InteractionLoop:
                 except Exception as e:
                     print(f"[INFO] Could not save session summary: {e}")
 
+            # GPT session summarization — creates a narrative summary
+            try:
+                import vector_memory as vmem
+                if vmem.is_available() and self.brain and self.brain._interaction_count >= 3:
+                    # Build conversation turns from brain history
+                    turns = []
+                    for msg in self.brain.history:
+                        role = msg.get("role", "")
+                        content = msg.get("content", "")
+                        if role == "user":
+                            # Strip context markers
+                            import re
+                            clean = re.sub(r'\[.*?\]\s*', '', content).strip()
+                            if clean:
+                                turns.append(("patient", clean, ""))
+                        elif role == "assistant":
+                            turns.append(("reachy", content, ""))
+                    if turns:
+                        summary_text = vmem.summarize_session(turns)
+                        if summary_text:
+                            print(f"[SESSION] Summary: {summary_text}")
+            except Exception as e:
+                print(f"[INFO] Session summarization error: {e}")
+
+            # Run final temporal pattern analysis
+            try:
+                import temporal_patterns as tp
+                tp.analyze()
+            except Exception:
+                pass
+
             self._log_activity("session_end", "Reachy assistant stopped")
             self.autonomy.stop()
             self.fall_detector.stop()
@@ -1005,8 +1165,10 @@ class InteractionLoop:
             if self.face_detector:
                 self.face_detector.stop()
             if self._camera_server:
-                from camera_stream import stop_stream_server
-                stop_stream_server(self._camera_server)
+                self.robot.stop_camera_stream()
+                if self._camera_server is not True:
+                    from camera_stream import stop_stream_server
+                    stop_stream_server(self._camera_server)
             self.robot.reset()
             self.robot.disconnect()
 

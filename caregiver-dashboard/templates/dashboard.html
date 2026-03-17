@@ -52,6 +52,26 @@
     .dash-layout { grid-template-columns: 1fr; }
     .dash-sidebar { max-height: 50vh; }
   }
+
+  .pulse-alert {
+    animation: pulseAlert 1.5s infinite;
+  }
+  @keyframes pulseAlert {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  @keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(255, 80, 80, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0); }
+}
+
+.stat-alert {
+  animation: pulse 2s infinite;
+}
+
+
 </style>
 {% endblock %}
 
@@ -61,6 +81,7 @@
     <div class="patient-bar" id="patientBar">
       <div class="avatar">👤</div>
       <div class="info">
+        <span id="lastUpdated" style="font-size:11px;color:var(--muted);"></span>
         <div class="pname" id="patientName">Patient</div>
         <div class="detail" id="patientDetail">Waiting for session...</div>
       </div>
@@ -69,15 +90,24 @@
     <div class="grid-4" id="stats" style="margin-bottom:18px;"></div>
     <div class="grid-2" style="margin-bottom:18px;">
       <div class="card" style="padding:10px;">
-        <div class="card-header" style="margin-bottom:8px;"><div class="card-title">📷 Live Camera</div>
-          <div class="card-muted" id="camStatus">Connecting...</div></div>
-        <div style="position:relative;background:#000;border-radius:8px;overflow:hidden;min-height:200px;">
-          <img id="camStream" src="http://localhost:5556/stream" alt="Reachy camera feed"
+        <div class="card-header" style="margin-bottom:8px;">
+          <div class="card-title">📷 Live Camera</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="card-muted" id="camStatus">Connecting...</div>
+            <button class="btn btn-ghost btn-sm" onclick="toggleFullCam()" id="camFullBtn" title="Fullscreen">⛶</button>
+          </div>
+        </div>
+        <div id="camContainer" style="position:relative;background:#000;border-radius:8px;overflow:hidden;min-height:200px;">
+          <img id="camStream" src="/api/camera/stream" alt="Reachy camera feed"
             style="width:100%;display:block;border-radius:8px;"
             onerror="this.style.display='none';document.getElementById('camOff').style.display='flex';document.getElementById('camStatus').textContent='Offline';"
             onload="document.getElementById('camOff').style.display='none';this.style.display='block';document.getElementById('camStatus').textContent='Live';">
           <div id="camOff" style="display:flex;align-items:center;justify-content:center;min-height:200px;color:var(--muted);font-size:13px;">
-            📷 Camera offline — start Reachy to enable
+            <div style="text-align:center;">
+              <div>📷 Camera is offline</div>
+              <div style="margin:8px 0;font-size:12px;">Make sure Reachy is running</div>
+              <button class="btn btn-ghost btn-sm" onclick="retryCam()">🔄 Retry</button>
+            </div>
           </div>
         </div>
       </div>
@@ -95,8 +125,13 @@
     </div>
   </div>
 
-  <div class="dash-sidebar">
-    <div class="sidebar-head">💬 {{ t('conversation') }}</div>
+  <button id="convoOpenBtn" onclick="toggleConvo()" style="display:none;position:fixed;bottom:24px;right:24px;z-index:150;width:56px;height:56px;border-radius:50%;background:var(--blue);border:none;color:white;font-size:24px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.3);">💬</button>
+  <div class="dash-sidebar" id="dashSidebar">
+    <div class="sidebar-head" onclick="toggleConvo()" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
+      💬 {{ t('conversation') }}
+      <span id="convoToggle" style="font-size:12px;">▼</span>
+    </div>
+    <div id="convoBody" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
     <div class="convo" id="convo">
       <div class="empty" style="padding:30px 10px;">
         <div class="empty-icon">🎙️</div>
@@ -117,6 +152,7 @@
         <button class="btn-send" onclick="sendMsg()">{{ t('send') }}</button>
       </div>
       <button onclick="triggerSOS()" style="width:100%;margin-top:8px;padding:10px;background:var(--red);border:none;color:white;border-radius:10px;cursor:pointer;font-size:14px;font-weight:600;">🚨 {{ t('emergency_sos') }}</button>
+    </div>
     </div>
   </div>
 </div>
@@ -148,7 +184,7 @@ function renderStats(){
   const types=['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST'];
   document.getElementById('stats').innerHTML=types.map(t=>{
     const c=cfg(t),n=counts[t]||0;
-    return `<div class="stat" style="${n?'border-color:'+c.color:''}">
+    return `<div class="stat ${n?'pulse-alert':''}" style="${n?'border-color:'+c.color:''}">
       <div class="stat-icon">${c.icon}</div>
       <div class="stat-num" style="color:${n?c.color:'var(--muted)'}">${n}</div>
       <div class="stat-label">${c.label}</div></div>`;
@@ -182,13 +218,22 @@ function renderAlerts(){
   }).join('');
 }
 
+function timeAgo(str){
+  var s=Math.floor((Date.now()-new Date(str))/1000);
+  if(s<60)return 'just now';
+  if(s<3600)return Math.floor(s/60)+'m ago';
+  if(s<86400)return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+
+
 function renderConvo(){
   const el=document.getElementById('convo');
   if(!convo.length) return;
   el.innerHTML=convo.map(c=>{
     const cls=c.speaker==='patient'?'patient':c.speaker==='caregiver'?'caregiver':'reachy';
     const who=c.speaker==='patient'?'🎙️ Patient':c.speaker==='caregiver'?'👨‍⚕️ Caregiver':'🤖 Reachy';
-    return `<div class="bubble ${cls}"><div class="who">${who}</div>${c.text}<div class="btime">${c.time}</div></div>`;
+    return `<div class="bubble ${cls}"><div class="who">${who}</div>${c.text}<div class="btime">${timeAgo(c.time)}</div></div>`;
   }).join('');
   el.scrollTop=el.scrollHeight;
 }
@@ -234,6 +279,35 @@ function triggerSOS(){
     body:JSON.stringify({text:'Emergency! Your caregiver is on the way. Stay calm, help is coming.',priority:'urgent'})});
 }
 
+function toggleFullCam(){
+  var el=document.getElementById('camContainer');
+  if(!document.fullscreenElement){
+    el.requestFullscreen().catch(function(){});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+function toggleConvo(){
+  var sidebar=document.getElementById('dashSidebar');
+  var btn=document.getElementById('convoOpenBtn');
+  if(sidebar.style.display==='none'){
+    sidebar.style.display='';
+    btn.style.display='none';
+  }else{
+    sidebar.style.display='none';
+    btn.style.display='block';
+  }
+}
+
+function retryCam(){
+  var img=document.getElementById('camStream');
+  img.style.display='block';
+  document.getElementById('camOff').style.display='none';
+  document.getElementById('camStatus').textContent='Reconnecting...';
+  img.src='/api/camera/stream?t='+Date.now();
+}
+
 async function init(){
   try{
     const[aRes,cRes,sRes]=await Promise.all([
@@ -242,6 +316,8 @@ async function init(){
     const status=await sRes.json();
     renderStats();renderAlerts();renderConvo();updatePatientBar(status);
   }catch(e){console.error(e);}
+  document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+
 }
 
 onSSE('alert',a=>{alerts.unshift(a);renderStats();renderAlerts();

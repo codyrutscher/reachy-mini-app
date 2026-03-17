@@ -139,3 +139,17 @@ class ReminderManager:
         print(f"[REMIND] 🔔 {message}")
         if self.on_reminder:
             self.on_reminder(message)
+
+    def clear_past_appointments(self) -> str:
+        """Remove appointments that have already passed."""
+        now = datetime.now()
+        before = len(self.appointments)
+        self.appointments = [
+            a for a in self.appointments
+            if datetime.strptime(a["when"], "%Y-%m-%d %H:%M") > now
+        ]
+        self._save()
+        removed = before - len(self.appointments)
+        if removed:
+            return f"Removed {removed} past appointment{'s' if removed > 1 else ''}."
+        return "No past appointments to clear."

@@ -11,6 +11,9 @@ openai
 # RAG memory
 # OpenAI embeddings preferred; hash-based fallback if no API key
 
+# Postgres/Supabase support (optional — set SUPABASE_DB_URL to activate)
+psycopg2-binary
+
 # Fall detection
 mediapipe
 

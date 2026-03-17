@@ -1,8 +1,9 @@
 """RAG memory system — persistent cross-session memory for Reachy.
 
 Stores conversation snippets, patient facts, and care events in a
-SQLite vector store. Uses OpenAI embeddings (preferred) or a
-hash-based fallback for vector similarity.
+SQLite vector store (or PostgreSQL/Supabase when configured).
+Uses OpenAI embeddings (preferred) or a hash-based fallback for
+vector similarity.
 At query time, retrieves the most relevant memories to inject into
 the LLM context, making Reachy remember across sessions.
 
@@ -11,6 +12,10 @@ Memory types:
 - conversation: notable conversation snippets worth remembering
 - event: care events (medication taken, exercise done, mood episode)
 - preference: likes, dislikes, routines
+
+Backend selection:
+  Set SUPABASE_DB_URL or DATABASE_URL to a postgresql:// connection
+  string to use Postgres.  Otherwise falls back to local SQLite.
 """
 
 import json
@@ -21,6 +26,11 @@ import time
 from datetime import datetime
 
 import numpy as np
+
+# ── Backend detection ───────────────────────────────────────────────
+
+_PG_URL = os.environ.get("SUPABASE_DB_URL") or os.environ.get("DATABASE_URL", "")
+_use_postgres = bool(_PG_URL)
 
 MEMORY_DB = os.environ.get(
     "REACHY_MEMORY_DB",
@@ -66,7 +76,15 @@ def _get_embedder():
         return _embedder
 
 
+# ── Connection helpers ──────────────────────────────────────────────
+
 def _get_conn():
+    if _use_postgres:
+        return _get_pg_conn()
+    return _get_sqlite_conn()
+
+
+def _get_sqlite_conn():
     if not hasattr(_local, "conn") or _local.conn is None:
         _local.conn = sqlite3.connect(MEMORY_DB, check_same_thread=False)
         _local.conn.row_factory = sqlite3.Row
@@ -74,43 +92,117 @@ def _get_conn():
     return _local.conn
 
 
+def _get_pg_conn():
+    if not hasattr(_local, "conn") or _local.conn is None or _local.conn.closed:
+        import psycopg2
+        _local.conn = psycopg2.connect(_PG_URL)
+        _local.conn.autocommit = True
+    return _local.conn
+
+
+def _ph(index=None):
+    """Return the placeholder style for the active backend."""
+    return "%s" if _use_postgres else "?"
+
+
+def _execute(sql, params=None, fetch=False, fetchone=False):
+    """Unified query runner.  For Postgres uses RealDictCursor; for SQLite
+    relies on Row factory already set on the connection."""
+    conn = _get_conn()
+    if _use_postgres:
+        import psycopg2.extras
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql, params or ())
+            if fetchone:
+                row = cur.fetchone()
+                return dict(row) if row else None
+            if fetch:
+                return [dict(r) for r in cur.fetchall()]
+        return None
+    else:
+        cur = conn.execute(sql, params or ())
+        if fetchone:
+            row = cur.fetchone()
+            return dict(row) if row else None
+        if fetch:
+            return [dict(r) for r in cur.fetchall()]
+        conn.commit()
+        return cur
+
+
+# ── Database initialisation ─────────────────────────────────────────
+
 def init_memory_db():
     """Create the memory tables."""
     conn = _get_conn()
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS memories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id TEXT DEFAULT 'default',
-            memory_type TEXT NOT NULL,
-            content TEXT NOT NULL,
-            embedding BLOB,
-            importance REAL DEFAULT 0.5,
-            access_count INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            last_accessed TEXT,
-            metadata TEXT DEFAULT '{}'
-        );
-        CREATE INDEX IF NOT EXISTS idx_memories_patient
-            ON memories(patient_id);
-        CREATE INDEX IF NOT EXISTS idx_memories_type
-            ON memories(patient_id, memory_type);
+    if _use_postgres:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS memories (
+                    id SERIAL PRIMARY KEY,
+                    patient_id TEXT DEFAULT 'default',
+                    memory_type TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    embedding BYTEA,
+                    importance REAL DEFAULT 0.5,
+                    access_count INTEGER DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    last_accessed TEXT,
+                    metadata TEXT DEFAULT '{}'
+                );
+                CREATE INDEX IF NOT EXISTS idx_memories_patient
+                    ON memories(patient_id);
+                CREATE INDEX IF NOT EXISTS idx_memories_type
+                    ON memories(patient_id, memory_type);
 
-        CREATE TABLE IF NOT EXISTS session_summaries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            patient_id TEXT DEFAULT 'default',
-            summary TEXT NOT NULL,
-            mood_distribution TEXT DEFAULT '{}',
-            facts_learned TEXT DEFAULT '[]',
-            duration_minutes REAL DEFAULT 0,
-            created_at TEXT NOT NULL
-        );
-    """)
-    conn.commit()
-    print(f"[MEMORY] Database ready: {MEMORY_DB}")
+                CREATE TABLE IF NOT EXISTS session_summaries (
+                    id SERIAL PRIMARY KEY,
+                    patient_id TEXT DEFAULT 'default',
+                    summary TEXT NOT NULL,
+                    mood_distribution TEXT DEFAULT '{}',
+                    facts_learned TEXT DEFAULT '[]',
+                    duration_minutes REAL DEFAULT 0,
+                    created_at TEXT NOT NULL
+                );
+            """)
+        print(f"[MEMORY] PostgreSQL database ready: {_PG_URL[:40]}...")
+    else:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id TEXT DEFAULT 'default',
+                memory_type TEXT NOT NULL,
+                content TEXT NOT NULL,
+                embedding BLOB,
+                importance REAL DEFAULT 0.5,
+                access_count INTEGER DEFAULT 0,
+                created_at TEXT NOT NULL,
+                last_accessed TEXT,
+                metadata TEXT DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_memories_patient
+                ON memories(patient_id);
+            CREATE INDEX IF NOT EXISTS idx_memories_type
+                ON memories(patient_id, memory_type);
 
+            CREATE TABLE IF NOT EXISTS session_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id TEXT DEFAULT 'default',
+                summary TEXT NOT NULL,
+                mood_distribution TEXT DEFAULT '{}',
+                facts_learned TEXT DEFAULT '[]',
+                duration_minutes REAL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.commit()
+        print(f"[MEMORY] Database ready: {MEMORY_DB}")
+
+
+# ── Embedding helpers ───────────────────────────────────────────────
 
 def _embed(text: str) -> bytes:
-    """Embed text and return as bytes for SQLite storage."""
+    """Embed text and return as bytes for storage."""
     model = _get_embedder()
 
     if _embed_backend == "openai":
@@ -135,6 +227,24 @@ def _embed(text: str) -> bytes:
         return vec.tobytes()
 
 
+def _store_embedding(raw_bytes: bytes):
+    """Wrap embedding bytes for the active backend."""
+    if _use_postgres:
+        import psycopg2
+        return psycopg2.Binary(raw_bytes)
+    return raw_bytes
+
+
+def _read_embedding(value) -> bytes:
+    """Normalise an embedding value coming back from the database."""
+    if value is None:
+        return b""
+    # psycopg2 returns memoryview for BYTEA columns
+    if isinstance(value, memoryview):
+        return bytes(value)
+    return bytes(value)
+
+
 def _bytes_to_vec(b: bytes) -> np.ndarray:
     return np.frombuffer(b, dtype=np.float32)
 
@@ -154,32 +264,45 @@ def store_memory(
     metadata: dict = None,
 ):
     """Store a new memory with its embedding."""
-    conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    p = _ph()
 
     # Check for near-duplicates before storing
     existing = recall(content, patient_id=patient_id, top_k=1, threshold=0.85)
     if existing:
         # Update access count instead of duplicating
-        conn.execute(
-            "UPDATE memories SET access_count = access_count + 1, last_accessed = ? WHERE id = ?",
+        _execute(
+            f"UPDATE memories SET access_count = access_count + 1, last_accessed = {p} WHERE id = {p}",
             (now, existing[0]["id"]),
         )
-        conn.commit()
         return existing[0]["id"]
 
     embedding = _embed(content)
     meta_json = json.dumps(metadata or {})
 
-    cur = conn.execute(
-        """INSERT INTO memories
-           (patient_id, memory_type, content, embedding, importance, created_at, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (patient_id, memory_type, content, embedding, importance, now, meta_json),
-    )
-    conn.commit()
+    if _use_postgres:
+        row = _execute(
+            "INSERT INTO memories"
+            " (patient_id, memory_type, content, embedding, importance, created_at, metadata)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (patient_id, memory_type, content, _store_embedding(embedding),
+             importance, now, meta_json),
+            fetchone=True,
+        )
+        mem_id = row["id"]
+    else:
+        conn = _get_conn()
+        cur = conn.execute(
+            "INSERT INTO memories"
+            " (patient_id, memory_type, content, embedding, importance, created_at, metadata)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (patient_id, memory_type, content, embedding, importance, now, meta_json),
+        )
+        conn.commit()
+        mem_id = cur.lastrowid
+
     print(f"[MEMORY] Stored ({memory_type}): {content[:60]}")
-    return cur.lastrowid
+    return mem_id
 
 
 def recall(
@@ -190,21 +313,23 @@ def recall(
     threshold: float = 0.3,
 ) -> list[dict]:
     """Retrieve the most relevant memories for a query."""
-    conn = _get_conn()
     query_vec = _embed(query)
     query_np = _bytes_to_vec(query_vec)
+    p = _ph()
 
     # Fetch all memories for this patient
     if memory_type:
-        rows = conn.execute(
-            "SELECT * FROM memories WHERE patient_id = ? AND memory_type = ?",
+        rows = _execute(
+            f"SELECT * FROM memories WHERE patient_id = {p} AND memory_type = {p}",
             (patient_id, memory_type),
-        ).fetchall()
+            fetch=True,
+        )
     else:
-        rows = conn.execute(
-            "SELECT * FROM memories WHERE patient_id = ?",
+        rows = _execute(
+            f"SELECT * FROM memories WHERE patient_id = {p}",
             (patient_id,),
-        ).fetchall()
+            fetch=True,
+        )
 
     if not rows:
         return []
@@ -212,9 +337,10 @@ def recall(
     # Score each memory: cosine similarity * importance * recency boost
     scored = []
     for row in rows:
-        if not row["embedding"]:
+        emb = _read_embedding(row.get("embedding"))
+        if not emb:
             continue
-        mem_vec = _bytes_to_vec(row["embedding"])
+        mem_vec = _bytes_to_vec(emb)
         sim = _cosine_sim(query_np, mem_vec)
 
         # Recency boost: memories from today get a small boost
@@ -238,19 +364,19 @@ def recall(
                 "score": round(score, 3),
                 "created_at": row["created_at"],
                 "access_count": row["access_count"],
-                "metadata": json.loads(row["metadata"] or "{}"),
+                "metadata": json.loads(row.get("metadata") or "{}"),
             })
 
     # Sort by score, return top_k
     scored.sort(key=lambda x: x["score"], reverse=True)
 
     # Update access counts
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for mem in scored[:top_k]:
-        conn.execute(
-            "UPDATE memories SET access_count = access_count + 1, last_accessed = ? WHERE id = ?",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), mem["id"]),
+        _execute(
+            f"UPDATE memories SET access_count = access_count + 1, last_accessed = {p} WHERE id = {p}",
+            (now, mem["id"]),
         )
-    conn.commit()
 
     return scored[:top_k]
 
@@ -299,12 +425,12 @@ def save_session_summary(
     patient_id: str = "default",
 ):
     """Save a session summary for long-term reference."""
-    conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        """INSERT INTO session_summaries
-           (patient_id, summary, mood_distribution, facts_learned, duration_minutes, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+    p = _ph()
+    _execute(
+        f"INSERT INTO session_summaries"
+        f" (patient_id, summary, mood_distribution, facts_learned, duration_minutes, created_at)"
+        f" VALUES ({p}, {p}, {p}, {p}, {p}, {p})",
         (
             patient_id,
             summary,
@@ -314,7 +440,6 @@ def save_session_summary(
             now,
         ),
     )
-    conn.commit()
 
     # Also store the summary as a memory for future retrieval
     store_memory(
@@ -326,12 +451,12 @@ def save_session_summary(
 
 
 def get_recent_summaries(patient_id: str = "default", limit: int = 5) -> list[dict]:
-    conn = _get_conn()
-    rows = conn.execute(
-        "SELECT * FROM session_summaries WHERE patient_id = ? ORDER BY id DESC LIMIT ?",
+    p = _ph()
+    return _execute(
+        f"SELECT * FROM session_summaries WHERE patient_id = {p} ORDER BY id DESC LIMIT {p}",
         (patient_id, limit),
-    ).fetchall()
-    return [dict(r) for r in rows]
+        fetch=True,
+    ) or []
 
 
 # ── Automatic fact extraction and storage ───────────────────────────
@@ -417,17 +542,27 @@ def process_conversation_turn(
 
 def get_memory_stats(patient_id: str = "default") -> dict:
     """Get stats about stored memories."""
-    conn = _get_conn()
-    total = conn.execute(
-        "SELECT COUNT(*) FROM memories WHERE patient_id = ?", (patient_id,)
-    ).fetchone()[0]
-    by_type = conn.execute(
-        "SELECT memory_type, COUNT(*) as cnt FROM memories WHERE patient_id = ? GROUP BY memory_type",
+    p = _ph()
+    total_row = _execute(
+        f"SELECT COUNT(*) as cnt FROM memories WHERE patient_id = {p}",
         (patient_id,),
-    ).fetchall()
-    sessions = conn.execute(
-        "SELECT COUNT(*) FROM session_summaries WHERE patient_id = ?", (patient_id,)
-    ).fetchone()[0]
+        fetchone=True,
+    )
+    total = total_row["cnt"] if total_row else 0
+
+    by_type = _execute(
+        f"SELECT memory_type, COUNT(*) as cnt FROM memories WHERE patient_id = {p} GROUP BY memory_type",
+        (patient_id,),
+        fetch=True,
+    ) or []
+
+    sessions_row = _execute(
+        f"SELECT COUNT(*) as cnt FROM session_summaries WHERE patient_id = {p}",
+        (patient_id,),
+        fetchone=True,
+    )
+    sessions = sessions_row["cnt"] if sessions_row else 0
+
     return {
         "total_memories": total,
         "by_type": {r["memory_type"]: r["cnt"] for r in by_type},

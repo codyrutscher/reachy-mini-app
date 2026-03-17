@@ -1,13 +1,84 @@
 {% extends "_base.html" %}
 {% block title %}Activity Log — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .activity-row {
+  border-bottom: 1px solid blue;
+  margin-top: 10px;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  }
+
+  .activity-row:hover { background: var(--card2); }
+
+   .activity-row:last-child {
+  border-bottom: none;
+  }
+  .filter-bar { }
+
+  .date-header {
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+  }
+
+</style>
+{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
       <div class="page-title">📋 Activity Log</div>
-      <div class="page-subtitle">Everything that happened — timestamped</div>
+      <div class="page-subtitle">Everything that happened — <span id="actCount"></span></div>
+    </div>
+    <div class="grid-4" style="margin-bottom:32px; margin-right: 10px;">
+      <div class="stat">
+        <div class="stat-icon">📊</div>
+        <div class="stat-num" id="statTotal">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-num" id="statAlerts">0</div>
+        <div class="stat-label">Alerts</div>
+      </div>
+      <div class="stat">
+        <div class="stat-icon">💊</div>
+        <div class="stat-num" id="statMeds">0</div>
+        <div class="stat-label">Meds</div>
+      </div>
+      <div class="stat">
+        <div class="stat-icon">🎙️</div>
+        <div class="stat-num" id="statPatient">0</div>
+        <div class="stat-label">Patient</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <a href="/api/export/csv" class="btn btn-ghost">📥 Export CSV</a>
+      <select class="form-input" id="filterType" onchange="render()" style="width:200px;">
+      <option value="all">All Activities</option>
+      <option value="alert">Alerts</option>
+      <option value="med_log">Medications</option>
+      <option value="patient_spoke">Patient Spoke</option>
+      <option value="message_sent">Messages Sent</option>
+      <option value="login">Logins</option>
+      <option value="checkin">Check-ins</option>
+    </select>
+    <input class="form-input" id="searchBox" placeholder="🔍 Search..." oninput="render()" style="width:200px;">
+    <button class="btn btn-ghost" onclick="clearFilters()">Clear Filters</button>
+
+
     </div>
   </div>
+
   <div class="card">
     <div id="actList" style="max-height:70vh;overflow-y:auto;"></div>
     <div class="empty" id="actEmpty"><div class="empty-icon">📋</div><p>No activity recorded yet.</p></div>
@@ -18,16 +89,81 @@
 <script>
 var acts=[];
 var ACT_ICONS={login:'��',alert:'⚠️',message_sent:'💬',patient_spoke:'🎙️',med_added:'💊',med_log:'💊',schedule_added:'📅',patient_added:'👥',checkin:'📋',scheduled_message:'📅'};
+var ACT_COLORS={
+  login:'var(--blue)',
+  alert:'var(--red)',
+  message_sent:'var(--cyan)',
+  patient_spoke:'var(--purple)',
+  med_added:'var(--green)',
+  med_log:'var(--green)',
+  schedule_added:'var(--orange)',
+  patient_added:'var(--blue)',
+  checkin:'var(--yellow)',
+  scheduled_message:'var(--orange)'
+};
 async function load(){acts=await fetch('/api/activity').then(function(r){return r.json();});render();}
-function render(){
-  var el=document.getElementById('actList'),empty=document.getElementById('actEmpty');
-  if(!acts.length){el.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  el.innerHTML=acts.map(function(a){
-    var icon=ACT_ICONS[a.action]||'📌';
-    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:flex-start;"><span style="font-size:18px;">'+icon+'</span><div style="flex:1;"><div style="font-size:13px;"><span style="font-weight:500;">'+a.action+'</span>'+(a.details?' — '+a.details:'')+'</div><div style="font-size:11px;color:var(--muted);">'+a.time+'</div></div></div>';
-  }).join('');
+function timeAgo(str){
+  var seconds = Math.floor((Date.now() - new Date(str)) / 1000);
+  if(seconds < 60) return 'just now';
+  if(seconds < 3600) return Math.floor(seconds/60) + 'm ago';
+  if(seconds < 86400) return Math.floor(seconds/3600) + 'h ago';
+  return Math.floor(seconds/86400) + 'd ago';
 }
+function clearFilters(){
+  document.getElementById('filterType').value = 'all';
+  document.getElementById('searchBox').value = '';
+  render();
+}
+
+function dateLabel(d){
+  var now = new Date();
+  var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  var target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  var diff = Math.floor((today - target) / 86400000);
+  if(diff === 0) return '📅 Today';
+  if(diff === 1) return '📅 Yesterday';
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return '📅 ' + months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function render(){
+  var filter = document.getElementById('filterType').value;
+  var filtered = (filter === 'all') ? acts : acts.filter(function(a){ return a.action === filter; });
+  var search = document.getElementById('searchBox').value.toLowerCase();
+  if(search) filtered = filtered.filter(function(a){ return (a.action + ' ' + (a.details||'')).toLowerCase().indexOf(search) !== -1; });
+  document.getElementById('actCount').textContent = filtered.length + ' events';
+  var el=document.getElementById('actList'),empty=document.getElementById('actEmpty');
+  if(!filtered.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  // Group by date
+  var grouped = {};
+  filtered.forEach(function(a){
+    var d = new Date(a.time);
+    var key = d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    if(!grouped[key]) grouped[key] = {date: d, items: []};
+    grouped[key].items.push(a);
+  });
+
+  var html = '';
+  Object.keys(grouped).forEach(function(key){
+    var g = grouped[key];
+    var label = dateLabel(g.date);
+    html += '<div class="date-header">' + label + '</div>';
+    g.items.forEach(function(a){
+      var icon=ACT_ICONS[a.action]||'📌';
+      var color = ACT_COLORS[a.action] || 'var(--muted)';
+      html += '<div class="activity-row" style="border-left: 4px solid '+color+'"><span style="font-size:18px;">'+icon+'</span><div style="flex:1;"><div style="font-size:13px;"><span style="font-weight:500;">'+a.action+'</span>'+(a.details?' — '+a.details:'')+'</div><div style="font-size:11px;color:var(--muted);">'+timeAgo(a.time)+'</div></div></div>';
+    });
+  });
+  el.innerHTML = html;
+
+  document.getElementById('statTotal').textContent = acts.length;
+  document.getElementById('statAlerts').textContent = acts.filter(function(a){ return a.action === 'alert'; }).length;
+  document.getElementById('statMeds').textContent = acts.filter(function(a){ return a.action === 'med_log' || a.action === 'med_added'; }).length;
+  document.getElementById('statPatient').textContent = acts.filter(function(a){ return a.action === 'patient_spoke'; }).length;
+}
+
 onSSE('alert',function(){load();});
 load();
 </script>

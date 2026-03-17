@@ -1,38 +1,210 @@
 {% extends "_base.html" %}
 {% block title %}Reports — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .chart-title { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .chart-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .chart-label { font-size: 12px; color: var(--muted); width: 80px; text-align: right; }
+  .chart-fill { height: 20px; border-radius: 4px; min-width: 2px; transition: width 0.5s; }
+  .chart-val { font-size: 12px; color: var(--text); min-width: 30px; }
+  .summary-row { display: flex; gap: 12px; margin-bottom: 6px; }
+  .summary-key { font-size: 13px; color: var(--muted); min-width: 140px; }
+  .summary-val { font-size: 13px; font-weight: 500; }
+  .report-item { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; }
+  .report-date { font-size: 12px; color: var(--blue); font-weight: 600; margin-bottom: 4px; }
+  .report-text { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+  .vitals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .vital-item { background: var(--card2); border-radius: 8px; padding: 12px; text-align: center; }
+  .vital-val { font-size: 22px; font-weight: 700; }
+  .vital-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .chart-spinner { display:flex; align-items:center; justify-content:center; padding:30px; }
+.chart-spinner::after { content:''; width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+  @media (max-width: 800px) { .report-grid { grid-template-columns: 1fr; } .vitals-grid { grid-template-columns: 1fr 1fr; } }
+</style>
+{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="page-title">📝 Daily Reports</div>
-      <div class="page-subtitle">Auto-generated summaries of patient care</div>
+      <div class="page-title">📊 Reports & Analytics</div>
+      <div class="page-subtitle">Patient trends, mood analytics, and care summaries</div>
     </div>
-    <button class="btn btn-primary" onclick="genReport()">Generate Today's Report</button>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="exportCSV()">📥 Export CSV</button>
+      <button class="btn btn-primary" onclick="genReport()">Generate Today's Report</button>
+    </div>
   </div>
-  <div id="reportList"></div>
-  <div class="empty" id="reportEmpty"><div class="empty-icon">📝</div><p>No reports yet. Click "Generate Today's Report" to create one.</p></div>
+
+  <div class="grid-4" id="summaryStats" style="margin-bottom:18px;"></div>
+
+  <div class="report-grid">
+    <div class="chart-card">
+      <div class="chart-title">😊 Mood Distribution (Today)</div>
+      <div id="moodChart"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">💊 Medication Adherence</div>
+      <div id="medChart"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">📈 Activity Breakdown</div>
+      <div id="activityChart"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🩺 Latest Vitals</div>
+      <div id="vitalsChart"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;">
+    <div class="card-header">
+      <div class="card-title">📝 Generated Reports</div>
+    </div>
+    <div id="reportList"></div>
+    <div class="empty" id="reportEmpty"><div class="empty-icon">📝</div><p>No reports yet. Click "Generate Today's Report" to create one.</p></div>
+  </div>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
-var reports=[];
-async function load(){reports=await fetch('/api/reports').then(function(r){return r.json();});render();}
-function render(){
-  var el=document.getElementById('reportList'),empty=document.getElementById('reportEmpty');
-  if(!reports.length){el.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  el.innerHTML=reports.map(function(r){
-    var lines=r.report.split('\n');
-    var title=lines[0]||'Report';
-    var body=lines.slice(1).join('<br>');
-    return '<div class="card" style="margin-bottom:12px;"><div class="card-header"><div class="card-title">'+title+'</div><div class="card-muted">'+r.date+'</div></div><div style="font-size:14px;line-height:1.8;color:var(--muted);">'+body+'</div></div>';
+const MOOD_COLORS={joy:'#22c55e',sadness:'#3b82f6',anger:'#ef4444',fear:'#a855f7',surprise:'#eab308',neutral:'#6b7280',disgust:'#f97316'};
+
+async function loadAll(){
+  ['moodChart','medChart','activityChart','vitalsChart'].forEach(function(id){
+  document.getElementById(id).innerHTML='<div class="chart-spinner"></div>';
+  });
+  const [moods,meds,activities,vitals,reports]=await Promise.all([
+    fetch('/api/mood-history').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/med-log/today').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/activity').then(r=>r.json()).catch(()=>[]),
+    fetch('/api/vitals/latest').then(r=>r.json()).catch(()=>({})),
+    fetch('/api/reports').then(r=>r.json()).catch(()=>[]),
+  ]);
+  renderMoodChart(moods);
+  renderMedChart(meds);
+  renderActivityChart(activities);
+  renderVitals(vitals);
+  renderReports(reports);
+  renderSummary(moods,meds,activities);
+}
+
+function renderMoodChart(moods){
+  const el=document.getElementById('moodChart');
+  if(!moods||!moods.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No mood data yet.</div>';return;}
+  const counts={};
+  moods.forEach(m=>{const mood=m.mood||'neutral';counts[mood]=(counts[mood]||0)+1;});
+  const max=Math.max(...Object.values(counts),1);
+  el.innerHTML=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([mood,cnt])=>{
+    const pct=Math.round(cnt/max*100);
+    const color=MOOD_COLORS[mood]||'#6b7280';
+    return `<div class="chart-bar">
+      <div class="chart-label">${mood}</div>
+      <div class="chart-fill" style="width:${pct}%;background:${color};"></div>
+      <div class="chart-val">${cnt}</div>
+    </div>`;
   }).join('');
 }
-async function genReport(){
-  var res=await fetch('/api/reports/generate',{method:'POST'});
-  var data=await res.json();
-  alert('Report generated!');load();
+
+function renderMedChart(meds){
+  const el=document.getElementById('medChart');
+  if(!meds||!meds.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No medication logs today.</div>';return;}
+  const counts={taken:0,missed:0,late:0,skipped:0};
+  meds.forEach(m=>{const s=m.status||'taken';counts[s]=(counts[s]||0)+1;});
+  const total=Object.values(counts).reduce((a,b)=>a+b,0)||1;
+  const colors={taken:'#22c55e',missed:'#ef4444',late:'#f97316',skipped:'#6b7280'};
+  el.innerHTML=Object.entries(counts).filter(([,v])=>v>0).map(([status,cnt])=>{
+    const pct=Math.round(cnt/total*100);
+    return `<div class="chart-bar">
+      <div class="chart-label">${status}</div>
+      <div class="chart-fill" style="width:${pct}%;background:${colors[status]||'#6b7280'};"></div>
+      <div class="chart-val">${cnt} (${pct}%)</div>
+    </div>`;
+  }).join('');
 }
-load();
+
+function renderActivityChart(activities){
+  const el=document.getElementById('activityChart');
+  if(!activities||!activities.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No activity data yet.</div>';return;}
+  const counts={};
+  activities.slice(0,50).forEach(a=>{const act=a.action||'other';counts[act]=(counts[act]||0)+1;});
+  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const max=Math.max(...sorted.map(s=>s[1]),1);
+  const colors=['#3b82f6','#22c55e','#a855f7','#f97316','#eab308','#06b6d4','#ef4444','#6b7280'];
+  el.innerHTML=sorted.map(([action,cnt],i)=>{
+    const pct=Math.round(cnt/max*100);
+    return `<div class="chart-bar">
+      <div class="chart-label" style="width:100px;">${action.replace(/_/g,' ')}</div>
+      <div class="chart-fill" style="width:${pct}%;background:${colors[i%colors.length]};"></div>
+      <div class="chart-val">${cnt}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderVitals(vitals){
+  const el=document.getElementById('vitalsChart');
+  if(!vitals||(!vitals.heart_rate&&!vitals.spo2&&!vitals.temperature)){
+    el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No vitals data available.</div>';return;
+  }
+  const items=[];
+  if(vitals.heart_rate) items.push({val:vitals.heart_rate+' bpm',label:'Heart Rate',color:vitals.heart_rate>100||vitals.heart_rate<50?'var(--red)':'var(--green)'});
+  if(vitals.spo2) items.push({val:vitals.spo2+'%',label:'SpO₂',color:vitals.spo2<90?'var(--red)':'var(--green)'});
+  if(vitals.bp_systolic) items.push({val:vitals.bp_systolic+'/'+vitals.bp_diastolic,label:'Blood Pressure',color:'var(--blue)'});
+  if(vitals.temperature) items.push({val:vitals.temperature+'°F',label:'Temperature',color:vitals.temperature>100.4?'var(--red)':'var(--green)'});
+  el.innerHTML='<div class="vitals-grid">'+items.map(v=>
+    `<div class="vital-item"><div class="vital-val" style="color:${v.color}">${v.val}</div><div class="vital-label">${v.label}</div></div>`
+  ).join('')+'</div>';
+  if(vitals.time) el.innerHTML+=`<div style="font-size:11px;color:var(--muted);margin-top:8px;">Last reading: ${vitals.time}</div>`;
+}
+
+function renderReports(reports){
+  const el=document.getElementById('reportList');
+  const empty=document.getElementById('reportEmpty');
+  if(!reports||!reports.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=reports.map(r=>
+    `<div class="report-item">
+      <div class="report-date">📅 ${r.date||'Today'}</div>
+      <div class="report-text">${r.report||r.text||'No content'}</div>
+    </div>`
+  ).join('');
+}
+
+function renderSummary(moods,meds,activities){
+  const el=document.getElementById('summaryStats');
+  const moodCount=moods?moods.length:0;
+  const medsTaken=meds?meds.filter(m=>m.status==='taken').length:0;
+  const medsTotal=meds?meds.length:0;
+  const actCount=activities?activities.length:0;
+  const adherence=medsTotal>0?Math.round(medsTaken/medsTotal*100):0;
+  el.innerHTML=[
+    {icon:'😊',num:moodCount,label:'Mood Readings',color:'var(--blue)'},
+    {icon:'💊',num:adherence+'%',label:'Med Adherence',color:adherence>=80?'var(--green)':'var(--orange)'},
+    {icon:'📋',num:actCount,label:'Activities Logged',color:'var(--purple)'},
+    {icon:'🩺',num:medsTotal,label:'Meds Scheduled',color:'var(--cyan)'},
+  ].map(s=>`<div class="stat">
+    <div class="stat-icon">${s.icon}</div>
+    <div class="stat-num" style="color:${s.color}">${s.num}</div>
+    <div class="stat-label">${s.label}</div></div>`).join('');
+}
+
+async function genReport(){
+  const btn=event.target;btn.disabled=true;btn.textContent='Generating...';
+  try{
+    await fetch('/api/reports/generate',{method:'POST'});
+    await loadAll();
+  }catch(e){alert('Failed to generate report');}
+  btn.disabled=false;btn.textContent='Generate Today\'s Report';
+}
+
+function exportCSV(){
+  window.location='/api/export/csv';
+}
+
+onSSE('status',()=>loadAll());
+loadAll();
 </script>
 {% endblock %}

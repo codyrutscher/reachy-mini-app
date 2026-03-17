@@ -445,6 +445,296 @@ class Movements:
             self._go(head=create_head_pose(roll=-8, degrees=True), duration=0.15)
         self._home(0.4)
 
+    # ── Expressive / situational ──────────────────────────────────────
+
+    def excited_bounce(self):
+        """Quick bouncy up-down with antenna flapping — something exciting happened!"""
+        for _ in range(3):
+            self._go(
+                head=create_head_pose(pitch=-10, degrees=True),
+                antennas=[-1.0, -1.0],
+                duration=0.2,
+                method=InterpolationTechnique.CARTOON,
+            )
+            self._go(
+                head=create_head_pose(pitch=5, degrees=True),
+                antennas=[0.3, 0.3],
+                duration=0.2,
+                method=InterpolationTechnique.CARTOON,
+            )
+        # Final big bounce
+        self._go(
+            head=create_head_pose(pitch=-14, degrees=True),
+            antennas=[-1.0, -1.0],
+            duration=0.15,
+            method=InterpolationTechnique.CARTOON,
+        )
+        time.sleep(0.3)
+        self._home(0.3)
+
+    def comfort_pat(self):
+        """Gentle forward lean with slow side-to-side — like patting a shoulder."""
+        self._go(
+            head=create_head_pose(pitch=-10, roll=5, z=-4, degrees=True, mm=True),
+            antennas=[-0.2, -0.2],
+            duration=0.7,
+            method=InterpolationTechnique.EASE_IN_OUT,
+        )
+        for _ in range(3):
+            self._go(
+                head=create_head_pose(pitch=-10, roll=6, z=-4, degrees=True, mm=True),
+                antennas=[-0.2, -0.1],
+                duration=0.5,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+            self._go(
+                head=create_head_pose(pitch=-10, roll=-6, z=-4, degrees=True, mm=True),
+                antennas=[-0.1, -0.2],
+                duration=0.5,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+        self._home(0.5)
+
+    def storytelling(self):
+        """Animated head movements and antenna gestures for telling stories."""
+        # Dramatic lean in
+        self._go(
+            head=create_head_pose(pitch=-8, yaw=-10, degrees=True),
+            antennas=[-0.5, -0.3],
+            duration=0.4,
+            body_yaw=math.radians(-8),
+        )
+        time.sleep(0.3)
+        # Sweep to the other side
+        self._go(
+            head=create_head_pose(pitch=-5, yaw=12, degrees=True),
+            antennas=[-0.3, -0.6],
+            duration=0.5,
+            body_yaw=math.radians(8),
+        )
+        time.sleep(0.3)
+        # Surprise beat — antennas pop up
+        self._go(
+            head=create_head_pose(pitch=5, degrees=True),
+            antennas=[-1.0, -1.0],
+            duration=0.2,
+            method=InterpolationTechnique.CARTOON,
+            body_yaw=0.0,
+        )
+        time.sleep(0.4)
+        # Settle back
+        self._go(
+            head=create_head_pose(roll=6, degrees=True),
+            antennas=[-0.3, -0.3],
+            duration=0.4,
+        )
+        time.sleep(0.3)
+        self._home(0.4)
+
+    def exercise_demo(self):
+        """Exaggerated stretch movements to demonstrate exercises."""
+        # Big reach up
+        self._go(
+            head=create_head_pose(pitch=-22, degrees=True),
+            antennas=[-1.0, -1.0],
+            duration=0.8,
+            method=InterpolationTechnique.EASE_IN_OUT,
+        )
+        time.sleep(0.5)
+        # Lean left
+        self._go(
+            head=create_head_pose(roll=25, pitch=-10, degrees=True),
+            antennas=[-0.6, 0.3],
+            duration=0.7,
+            body_yaw=math.radians(10),
+        )
+        time.sleep(0.5)
+        # Lean right
+        self._go(
+            head=create_head_pose(roll=-25, pitch=-10, degrees=True),
+            antennas=[0.3, -0.6],
+            duration=0.7,
+            body_yaw=math.radians(-10),
+        )
+        time.sleep(0.5)
+        # Forward bend
+        self._go(
+            head=create_head_pose(pitch=-18, z=-6, degrees=True, mm=True),
+            antennas=[0.1, 0.1],
+            duration=0.8,
+            body_yaw=0.0,
+        )
+        time.sleep(0.5)
+        self._home(0.5)
+
+    def music_sway(self):
+        """Rhythmic swaying side to side with antenna conducting motions."""
+        for _ in range(4):
+            self._go(
+                head=create_head_pose(roll=12, pitch=-5, degrees=True),
+                antennas=[-0.7, -0.1],
+                duration=0.5,
+                method=InterpolationTechnique.EASE_IN_OUT,
+                body_yaw=math.radians(8),
+            )
+            self._go(
+                head=create_head_pose(roll=-12, pitch=-5, degrees=True),
+                antennas=[-0.1, -0.7],
+                duration=0.5,
+                method=InterpolationTechnique.EASE_IN_OUT,
+                body_yaw=math.radians(-8),
+            )
+        self._home(0.4)
+
+    def attention_grab(self):
+        """Quick antenna perk + head turn to get patient's attention."""
+        # Antennas snap up
+        self._go(
+            head=create_head_pose(pitch=-5, degrees=True),
+            antennas=[-1.0, -1.0],
+            duration=0.15,
+            method=InterpolationTechnique.LINEAR,
+        )
+        time.sleep(0.2)
+        # Quick head turn
+        self._go(
+            head=create_head_pose(yaw=-15, pitch=-8, degrees=True),
+            antennas=[-0.8, -0.8],
+            duration=0.25,
+            method=InterpolationTechnique.CARTOON,
+        )
+        time.sleep(0.4)
+        # Turn to face forward
+        self._go(
+            head=create_head_pose(pitch=-6, degrees=True),
+            antennas=[-0.6, -0.6],
+            duration=0.3,
+        )
+        time.sleep(0.3)
+        self._home(0.3)
+
+    def proud(self):
+        """Chest-out posture with antennas high — celebrating patient achievements."""
+        self._go(
+            head=create_head_pose(pitch=-12, z=-3, degrees=True, mm=True),
+            antennas=[-1.0, -1.0],
+            duration=0.6,
+            method=InterpolationTechnique.EASE_IN_OUT,
+        )
+        time.sleep(1.0)
+        # Little triumphant nod
+        self._go(
+            head=create_head_pose(pitch=-5, z=-3, degrees=True, mm=True),
+            antennas=[-0.8, -0.8],
+            duration=0.3,
+        )
+        self._go(
+            head=create_head_pose(pitch=-12, z=-3, degrees=True, mm=True),
+            antennas=[-1.0, -1.0],
+            duration=0.3,
+        )
+        time.sleep(0.5)
+        self._home(0.5)
+
+    def worried(self):
+        """Slight forward lean with antenna droop — showing concern."""
+        self._go(
+            head=create_head_pose(pitch=-6, roll=-4, z=-3, degrees=True, mm=True),
+            antennas=[0.4, 0.4],
+            duration=0.7,
+            method=InterpolationTechnique.EASE_IN_OUT,
+        )
+        time.sleep(1.0)
+        # Tiny anxious side-glance
+        self._go(
+            head=create_head_pose(pitch=-6, yaw=8, degrees=True),
+            antennas=[0.3, 0.5],
+            duration=0.4,
+        )
+        time.sleep(0.5)
+        self._go(
+            head=create_head_pose(pitch=-6, yaw=-8, degrees=True),
+            antennas=[0.5, 0.3],
+            duration=0.4,
+        )
+        time.sleep(0.5)
+        self._home(0.5)
+
+    def playful_peek(self):
+        """Peek left then right like playing peekaboo."""
+        # Hide (look down)
+        self._go(
+            head=create_head_pose(pitch=15, degrees=True),
+            antennas=[0.5, 0.5],
+            duration=0.3,
+        )
+        time.sleep(0.3)
+        # Peek left
+        self._go(
+            head=create_head_pose(yaw=20, pitch=-5, degrees=True),
+            antennas=[-0.6, -0.2],
+            duration=0.3,
+            method=InterpolationTechnique.CARTOON,
+            body_yaw=math.radians(12),
+        )
+        time.sleep(0.4)
+        # Hide again
+        self._go(
+            head=create_head_pose(pitch=15, degrees=True),
+            antennas=[0.5, 0.5],
+            duration=0.25,
+            body_yaw=0.0,
+        )
+        time.sleep(0.3)
+        # Peek right
+        self._go(
+            head=create_head_pose(yaw=-20, pitch=-5, degrees=True),
+            antennas=[-0.2, -0.6],
+            duration=0.3,
+            method=InterpolationTechnique.CARTOON,
+            body_yaw=math.radians(-12),
+        )
+        time.sleep(0.4)
+        self._home(0.4)
+
+    def meditation_guide(self, cycles: int = 3):
+        """Very slow, flowing movements for meditation sessions.
+        Slower and more serene than breathing_guide."""
+        for i in range(cycles):
+            # Slow rise — inhale (6 seconds)
+            self._go(
+                head=create_head_pose(pitch=-6, degrees=True),
+                antennas=[-0.5, -0.5],
+                duration=6.0,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+            # Hold stillness (4 seconds)
+            time.sleep(4.0)
+            # Gentle sway at peak
+            self._go(
+                head=create_head_pose(pitch=-6, roll=4, degrees=True),
+                antennas=[-0.4, -0.5],
+                duration=2.0,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+            self._go(
+                head=create_head_pose(pitch=-6, roll=-4, degrees=True),
+                antennas=[-0.5, -0.4],
+                duration=2.0,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+            # Slow descent — exhale (7 seconds)
+            self._go(
+                head=create_head_pose(pitch=4, degrees=True),
+                antennas=[0.1, 0.1],
+                duration=7.0,
+                method=InterpolationTechnique.EASE_IN_OUT,
+            )
+            # Rest between cycles
+            if i < cycles - 1:
+                time.sleep(2.0)
+        self._home(1.0)
+
     # ── Utility ─────────────────────────────────────────────────────
 
     def sleep(self):

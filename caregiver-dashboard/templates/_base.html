@@ -127,17 +127,19 @@
   <div class="nav-brand">🤖 <span>Reachy</span> Care</div>
   <div class="nav-links">
     <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">📊 {{ t('dashboard') }}</a>
-    <a href="/patients" class="nav-link {% if active_page == 'patients' %}active{% endif %}">👥 {{ t('patients') }}</a>
+    <a href="/patients" class="nav-link {% if active_page == 'patients' %}active{% endif %}" id="navPatients">👥 {{ t('patients') }}</a>
     <a href="/medications" class="nav-link {% if active_page == 'medications' %}active{% endif %}">💊 {{ t('medications') }}</a>
     <a href="/schedule" class="nav-link {% if active_page == 'schedule' %}active{% endif %}">📅 {{ t('schedule') }}</a>
     <a href="/history" class="nav-link {% if active_page == 'history' %}active{% endif %}">📈 {{ t('history') }}</a>
     <a href="/reports" class="nav-link {% if active_page == 'reports' %}active{% endif %}">📝 {{ t('reports') }}</a>
+    <a href="/camera" class="nav-link {% if active_page == 'camera' %}active{% endif %}">📷 Camera</a>
     <a href="/activity" class="nav-link {% if active_page == 'activity' %}active{% endif %}">📋 {{ t('activity') }}</a>
     <a href="/facilities" class="nav-link {% if active_page == 'facilities' %}active{% endif %}">🏥 {{ t('facilities') }}</a>
     <a href="/family" class="nav-link {% if active_page == 'family' %}active{% endif %}">👨‍👩‍👧 {{ t('family') }}</a>
     <a href="/settings" class="nav-link {% if active_page == 'settings' %}active{% endif %}">⚙️ {{ t('settings') }}</a>
   </div>
   <div class="nav-right">
+    <button id="soundBtn" onclick="toggleSound()" style="background:none;border:none;font-size:18px;cursor:pointer;padding:4px;" title="Toggle alert sounds">🔔</button>
     <select onchange="window.location='/set-lang/'+this.value" style="background:var(--input-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;">
       {% for lang in available_languages %}
       <option value="{{ lang }}" {% if lang == current_lang %}selected{% endif %}>{{ lang.upper() }}</option>
@@ -181,8 +183,17 @@ function connectSSE() {
 }
 connectSSE();
 
+var soundEnabled = true;
+
+function toggleSound() {
+  soundEnabled = !soundEnabled;
+  document.getElementById('soundBtn').textContent = soundEnabled ? '🔔' : '🔕';
+}
+
+
 // Audio alert for critical events
 function playAlertSound() {
+  if (!soundEnabled) return;
   try {
     var ctx = new (window.AudioContext || window.webkitAudioContext)();
     var osc = ctx.createOscillator();
@@ -236,6 +247,13 @@ onSSE('alert', function(a) {
     }
   }
 });
+// Patient count badge in nav
+(function(){
+  fetch('/api/patients').then(r=>r.json()).then(function(p){
+    var el=document.getElementById('navPatients');
+    if(el&&p.length) el.textContent='👥 {{ t("patients") }} ('+p.length+')';
+  }).catch(function(){});
+})();
 </script>
 {% block extra_js %}{% endblock %}
 </body>

@@ -3,7 +3,7 @@
 import json
 import os
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5555")
 
@@ -29,6 +29,12 @@ def log_bedtime() -> str:
         "action": "sleep_bedtime",
         "details": f"Bedtime logged at {now.strftime('%I:%M %p')}",
     })
+    try:
+        import db_supabase as _db
+        if _db.is_available():
+            _db.save_sleep_event("bedtime")
+    except Exception:
+        pass
     hour = now.hour
     if hour < 20:
         comment = "That's a bit early, but rest is important!"
@@ -48,6 +54,12 @@ def log_wake_time() -> str:
         "action": "sleep_wake",
         "details": f"Wake time logged at {now.strftime('%I:%M %p')}",
     })
+    try:
+        import db_supabase as _db
+        if _db.is_available():
+            _db.save_sleep_event("wake")
+    except Exception:
+        pass
     hour = now.hour
     if hour < 6:
         comment = "You're up early! Did you sleep okay?"
@@ -66,3 +78,18 @@ def sleep_report() -> str:
         "Consistent sleep helps with mood, memory, and overall wellbeing. "
         "Would you like me to remind you at bedtime?"
     )
+
+
+def sleep_duration(bedtime: str, wake_time: str) -> str:
+    """Calculate how long the patient slept.
+    Times are in '%I:%M %p' format, e.g. '10:30 PM' and '7:15 AM'."""
+    bed = datetime.strptime(bedtime, "%I:%M %p")
+    wake = datetime.strptime(wake_time, "%I:%M %p")
+    # if wake is earlier, they slept past midnight
+    if wake <= bed:
+        wake += timedelta(days=1)
+    diff = wake - bed
+    total_minutes = int(diff.total_seconds() // 60)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"You slept for {hours} hours and {minutes} minutes."

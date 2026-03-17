@@ -32,7 +32,6 @@ JOKES = [
 
 _told = []
 
-
 def tell_joke() -> str:
     """Return a joke. Avoids repeats until all have been told."""
     global _told
@@ -56,3 +55,14 @@ def tell_joke_setup_punchline() -> tuple[str, str]:
     joke = random.choice(available)
     _told.append(joke)
     return joke
+
+
+def get_joke_count() -> int:
+    """Return how many jokes have been told."""
+    return len(_told)
+
+
+def reset_jokes():
+    """Clear the told list so all jokes are available again."""
+    global _told
+    _told = []

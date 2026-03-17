@@ -171,10 +171,41 @@ def _sim_loop():
     """Main pygame loop for the simulator window."""
     global _current_expression, _current_action, _last_speech, _running
 
-    pygame.init()
-    screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Reachy Mini Simulator")
-    clock = pygame.time.Clock()
+    # On macOS, pygame/SDL display MUST run on the main thread.
+    # When started from a background thread, skip the visual window entirely.
+    import os
+    os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+    try:
+        pygame.init()
+        # dummy driver won't give us a real window, so just run headless
+        print("[SIM] Running headless -- no simulator window (camera still works)")
+        _running = True
+        while _running:
+            while not _command_queue.empty():
+                try:
+                    cmd, val = _command_queue.get_nowait()
+                    if cmd == "express":
+                        _current_expression = val if val in EXPRESSIONS else "neutral"
+                    elif cmd == "action":
+                        _current_action = val
+                    elif cmd == "speech":
+                        _last_speech = val
+                except queue.Empty:
+                    break
+            time.sleep(0.1)
+        return
+    except Exception as e:
+        print(f"[SIM] Could not start simulator: {e}")
+        _running = True
+        while _running:
+            while not _command_queue.empty():
+                try:
+                    _command_queue.get_nowait()
+                except queue.Empty:
+                    break
+            time.sleep(0.1)
+        return
 
     font_title = pygame.font.SysFont("Helvetica", 14)
     action_clear_time = 0

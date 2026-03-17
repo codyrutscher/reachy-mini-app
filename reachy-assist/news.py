@@ -37,3 +37,8 @@ def news_briefing(count: int = 5) -> str:
         lines.append(f"{i}. {h['title']}")
     lines.append("\nWould you like to hear more about any of these?")
     return "\n".join(lines)
+
+def headline_count() -> int:
+    headlines = fetch_headlines()
+    return len(headlines)
+

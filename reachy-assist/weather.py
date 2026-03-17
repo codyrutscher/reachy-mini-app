@@ -39,3 +39,18 @@ def weather_briefing(city: str = "auto") -> str:
         f"{w['temp_f']} degrees Fahrenheit, feels like {w['feels_like_f']}. "
         f"Humidity is {w['humidity']} percent."
     )
+
+def weather_advice(city: str = "auto") -> str:
+    """Return weather-based advice for the patient."""
+    w = get_weather(city)
+    if not w["ok"]:
+        return "I can't check the weather right now."
+    temp = int(w["temp_f"])
+    if temp < 40:
+        return f"It's {temp}°F in {w['location']} -- bundle up with a warm coat!"
+    elif temp < 60:
+        return f"It's {temp}°F in {w['location']} -- a jacket or sweater should do."
+    elif temp < 80:
+        return f"It's {temp}°F in {w['location']} -- nice weather out there!"
+    else:
+        return f"It's {temp}°F in {w['location']} -- stay hydrated and keep cool!"

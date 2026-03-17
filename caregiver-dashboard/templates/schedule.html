@@ -1,5 +1,22 @@
 {% extends "_base.html" %}
 {% block title %}Schedule — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .timeline { position: relative; padding-left: 24px; }
+  .timeline::before { content: ''; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: var(--border); }
+  .tl-item { position: relative; margin-bottom: 12px; }
+  .tl-dot { position: absolute; left: -20px; top: 6px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--border); background: var(--card); }
+  .tl-dot.active { border-color: var(--green); background: var(--green); }
+  .tl-dot.past { border-color: var(--muted); background: var(--muted); }
+  .tl-dot.upcoming { border-color: var(--blue); background: var(--blue); animation: pulse 2s infinite; }
+  .tl-card { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .tl-time { font-size: 12px; color: var(--blue); font-weight: 600; }
+  .tl-text { font-size: 14px; margin-top: 2px; }
+  .tl-meta { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; gap: 10px; align-items: center; }
+  .quick-presets .btn { padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; transition: all 0.2s; }
+  .quick-presets .btn:hover { border-color: var(--blue); background: var(--card2); transform: translateY(-1px); }
+</style>
+{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
@@ -9,30 +26,46 @@
     </div>
     <button class="btn btn-primary" onclick="showAddModal()">+ Schedule Message</button>
   </div>
-  <div class="card">
-    <table class="table" id="schedTable">
-      <thead><tr><th>Message</th><th>Time</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
-      <tbody id="schedBody"></tbody>
-    </table>
-    <div class="empty" id="schedEmpty"><div class="empty-icon">📅</div><p>No scheduled messages. Click "Schedule Message" to add one.</p></div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px;">📋 Today's Timeline</div>
+      <div class="timeline" id="timeline"></div>
+      <div class="empty" id="tlEmpty" style="display:none;padding:20px;"><div class="empty-icon">📅</div><p>No messages scheduled for today.</p></div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">All Scheduled Messages</div></div>
+        <table class="table" id="schedTable">
+          <thead><tr><th>Message</th><th>Time</th><th>Repeat</th><th>Status</th><th></th></tr></thead>
+          <tbody id="schedBody"></tbody>
+        </table>
+        <div class="empty" id="schedEmpty"><div class="empty-icon">📅</div><p>No scheduled messages.</p></div>
+      </div>
+    </div>
   </div>
-  <div class="card" style="margin-top:16px;">
+
+  <div class="card">
     <div class="card-header"><div class="card-title">💡 Quick Schedule Ideas</div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time to drink some water!','09:00','daily')">💧 Water reminder 9am</button>
-      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time for your morning medication!','08:00','daily')">💊 Morning meds 8am</button>
-      <button class="btn btn-ghost btn-sm" onclick="quickSched('How about a little stretch?','14:00','daily')">🧘 Afternoon stretch 2pm</button>
+    <div class="quick-presets" style="display:flex;gap:10px;flex-wrap:wrap;padding:4px 0;">
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time to drink some water!','09:00','daily')">💧 Water 9am</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time for your morning medication!','08:00','daily')">💊 Meds 8am</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('How about a little stretch?','14:00','daily')">🧘 Stretch 2pm</button>
       <button class="btn btn-ghost btn-sm" onclick="quickSched('Time to get ready for bed. Goodnight!','21:00','daily')">🌙 Bedtime 9pm</button>
-      <button class="btn btn-ghost btn-sm" onclick="quickSched('Your family sends their love!','12:00','daily')">❤️ Midday love 12pm</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Your family sends their love!','12:00','daily')">❤️ Love 12pm</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Let us do a quick check-in. How are you feeling?','10:00','daily')">📋 Check-in 10am</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('Time for lunch! Make sure to eat well.','12:30','daily')">🍽️ Lunch 12:30</button>
+      <button class="btn btn-ghost btn-sm" onclick="quickSched('How about we play a little brain game?','15:00','daily')">🧠 Brain game 3pm</button>
     </div>
   </div>
 </div>
+
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <div class="modal-title">Schedule a Message</div>
     <div class="form-group"><label class="form-label">Message (Reachy will say this)</label><textarea class="form-input" id="sText" placeholder="e.g. Time to take your afternoon medication!"></textarea></div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Time (HH:MM)</label><input class="form-input" id="sTime" type="time" value="08:00"></div>
+      <div class="form-group"><label class="form-label">Time</label><input class="form-input" id="sTime" type="time" value="08:00"></div>
       <div class="form-group"><label class="form-label">Repeat</label><select class="form-input" id="sRepeat"><option value="once">Once</option><option value="daily">Daily</option><option value="weekdays">Weekdays</option></select></div>
     </div>
     <div class="modal-actions">
@@ -45,15 +78,36 @@
 {% block extra_js %}
 <script>
 var items=[];
-async function load(){items=await fetch('/api/scheduled').then(function(r){return r.json();});render();}
+async function load(){
+  items=await fetch('/api/scheduled').then(r=>r.json()).catch(()=>[]);
+  render();
+  renderTimeline();
+}
+
 function render(){
   var body=document.getElementById('schedBody'),empty=document.getElementById('schedEmpty');
   if(!items.length){body.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
   body.innerHTML=items.map(function(s){
-    return '<tr><td style="max-width:300px;">'+s.text+'</td><td>'+s.time+'</td><td><span class="badge badge-blue">'+s.repeat+'</span></td><td><span class="badge badge-'+(s.active?'green':'muted')+'">'+(s.active?'Active':'Paused')+'</span></td><td><button class="btn btn-ghost btn-sm" onclick="toggleSched('+s.id+')">'+(s.active?'Pause':'Resume')+'</button> <button class="btn btn-ghost btn-sm" onclick="delSched('+s.id+')">x</button></td></tr>';
+    return '<tr><td style="max-width:200px;font-size:13px;">'+s.text+'</td><td>'+s.time+'</td><td><span class="badge badge-blue">'+s.repeat+'</span></td><td><span class="badge badge-'+(s.active?'green':'muted')+'">'+(s.active?'Active':'Paused')+'</span></td><td><button class="btn btn-ghost btn-sm" onclick="toggleSched('+s.id+')">'+(s.active?'Pause':'Resume')+'</button> <button class="btn btn-ghost btn-sm" onclick="delSched('+s.id+')">✕</button></td></tr>';
   }).join('');
 }
+
+function renderTimeline(){
+  var tl=document.getElementById('timeline'),empty=document.getElementById('tlEmpty');
+  var active=items.filter(function(s){return s.active;});
+  if(!active.length){tl.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var now=new Date();var nowMin=now.getHours()*60+now.getMinutes();
+  var sorted=active.slice().sort(function(a,b){return a.time.localeCompare(b.time);});
+  tl.innerHTML=sorted.map(function(s){
+    var parts=s.time.split(':');var sMin=parseInt(parts[0])*60+parseInt(parts[1]);
+    var cls=sMin<nowMin?'past':sMin<=nowMin+30?'upcoming':'active';
+    var statusText=sMin<nowMin?'Delivered':sMin<=nowMin+30?'Coming up':'Scheduled';
+    return '<div class="tl-item"><div class="tl-dot '+cls+'"></div><div class="tl-card"><div class="tl-time">'+s.time+'</div><div class="tl-text">'+s.text+'</div><div class="tl-meta"><span class="badge badge-'+(cls==='past'?'muted':cls==='upcoming'?'blue':'green')+'">'+statusText+'</span><span>'+s.repeat+'</span></div></div></div>';
+  }).join('');
+}
+
 function showAddModal(){document.getElementById('addModal').classList.add('show');}
 function hideAddModal(){document.getElementById('addModal').classList.remove('show');}
 async function addSched(){
@@ -68,5 +122,7 @@ async function quickSched(text,time,repeat){
 async function delSched(id){if(!confirm('Delete?'))return;await fetch('/api/scheduled/'+id,{method:'DELETE'});load();}
 async function toggleSched(id){await fetch('/api/scheduled/'+id+'/toggle',{method:'POST'});load();}
 load();
+// Refresh timeline every minute
+setInterval(renderTimeline,60000);
 </script>
 {% endblock %}

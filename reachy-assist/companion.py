@@ -114,3 +114,75 @@ def list_topics() -> str:
     """List available conversation topics."""
     topics = [t["topic"] for t in CONVERSATION_TOPICS]
     return "I can chat about: " + ", ".join(topics) + ". What interests you?"
+
+def add_topic(topic: str, starters: list[str]) -> str:
+    for t in CONVERSATION_TOPICS:
+        if t["topic"] == topic:
+            return f"Topic '{topic}' already exists."
+    # if we get here, topic wasn't found — add it
+    CONVERSATION_TOPICS.append({"topic": topic, "starters": starters})
+    return f"Added topic '{topic}' with {len(starters)} conversation starters."
+
+
+class TopicExplorer:
+    """Guides a conversation deeper into a topic, level by level."""
+
+    DEPTH_QUESTIONS = {
+        "family": {
+            1: ["Tell me about your family.", "Do you have a big family?", "Who's in your family?"],
+            2: ["Who are you closest to in your family?", "What do you love most about them?"],
+            3: ["What's your most treasured family memory?", "What would you want your family to know?"],
+        },
+        "travel": {
+            1: ["Have you traveled much?", "What's a place you've visited?"],
+            2: ["What made that trip special?", "Who did you travel with?"],
+            3: ["If you could relive one trip, which would it be?", "How did traveling change you?"],
+        },
+        "childhood": {
+            1: ["Where did you grow up?", "What was your neighborhood like?"],
+            2: ["Who was your best friend as a kid?", "What did you love doing after school?"],
+            3: ["What's a childhood moment you'll never forget?", "What would you tell your younger self?"],
+        },
+        "food": {
+            1: ["Do you enjoy cooking?", "What's your favorite meal?"],
+            2: ["Who taught you to cook?", "What meal reminds you of home?"],
+            3: ["Is there a meal that brings back a special memory?", "What food means comfort to you?"],
+        },
+    }
+
+    def __init__(self):
+        self._current_topic = None
+        self._depth = 0
+        self._asked = []
+
+    def start_topic(self, topic: str) -> str:
+        """Start exploring a topic at depth level 1."""
+        if topic not in self.DEPTH_QUESTIONS:
+            return f"I don't have deep questions for '{topic}' yet. Try: {', '.join(self.DEPTH_QUESTIONS.keys())}"
+        self._current_topic = topic
+        self._depth = 1
+        self._asked = []
+        return self._ask_question()
+
+    def go_deeper(self) -> str:
+        """Move to the next depth level."""
+        if not self._current_topic:
+            return "We're not exploring a topic yet. Pick one!"
+        max_depth = max(self.DEPTH_QUESTIONS[self._current_topic])
+        if self._depth >= max_depth:
+            return f"We've gone as deep as we can on {self._current_topic}. That was a great conversation!"
+        self._depth += 1
+        self._asked = []
+        return self._ask_question()
+
+    def _ask_question(self) -> str:
+        """Pick a question from the current depth level."""
+        questions = self.DEPTH_QUESTIONS[self._current_topic][self._depth]
+        available = [q for q in questions if q not in self._asked]
+        if not available:
+            available = questions
+        question = random.choice(available)
+        self._asked.append(question)
+        return question
+
+

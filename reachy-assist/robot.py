@@ -172,6 +172,21 @@ class Robot:
             "wake up": self.moves.wake_up_stretch,
             "sleep": self.moves.sleep,
             "empathy": self.moves.empathy_lean,
+            "excited": self.moves.excited_bounce,
+            "excited bounce": self.moves.excited_bounce,
+            "comfort": self.moves.comfort_pat,
+            "comfort pat": self.moves.comfort_pat,
+            "storytelling": self.moves.storytelling,
+            "exercise demo": self.moves.exercise_demo,
+            "music sway": self.moves.music_sway,
+            "attention": self.moves.attention_grab,
+            "attention grab": self.moves.attention_grab,
+            "proud": self.moves.proud,
+            "worried": self.moves.worried,
+            "peek": self.moves.playful_peek,
+            "peekaboo": self.moves.playful_peek,
+            "meditation": self.moves.meditation_guide,
+            "meditation guide": self.moves.meditation_guide,
         }
         mover = actions.get(action.lower())
         if mover:

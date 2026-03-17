@@ -1,0 +1,61 @@
+{% extends "_base.html" %}
+{% block title %}Live Camera -- Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .cam-main { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .cam-feed { background: #000; border-radius: 12px; overflow: hidden; position: relative; min-height: 400px; }
+  .cam-feed img { width: 100%; display: block; }
+  .cam-controls { display: flex; gap: 8px; margin-top: 12px; justify-content: center; }
+  .cam-status { text-align: center; margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .cam-offline { display: flex; align-items: center; justify-content: center;
+    min-height: 400px; color: var(--muted); flex-direction: column; gap: 12px; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="cam-main">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📷 Live Patient Camera</div>
+      <div class="page-subtitle">Real-time view from Reachy's camera</div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="takeSnapshot()">📸 Snapshot</button>
+      <button class="btn btn-primary" onclick="toggleFull()">⛶ Fullscreen</button>
+    </div>
+  </div>
+  <div class="cam-feed" id="camFeed">
+    <img id="camImg" src="/api/camera/stream"
+      onerror="this.style.display='none';document.getElementById('camOffline').style.display='flex';"
+      onload="this.style.display='block';document.getElementById('camOffline').style.display='none';document.getElementById('camStat').textContent='Live';">
+    <div class="cam-offline" id="camOffline">
+      <div style="font-size:48px;">📷</div>
+      <p>Camera is offline. Start Reachy to enable the live feed.</p>
+      <button class="btn btn-primary" onclick="retryCam()">Retry Connection</button>
+    </div>
+  </div>
+  <div class="cam-status">Status: <span id="camStat">Connecting...</span></div>
+  <div class="cam-controls">
+    <button class="btn btn-ghost btn-sm" onclick="retryCam()">🔄 Reconnect</button>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+function toggleFull(){
+  var el=document.getElementById('camFeed');
+  if(!document.fullscreenElement) el.requestFullscreen().catch(function(){});
+  else document.exitFullscreen();
+}
+function retryCam(){
+  var img=document.getElementById('camImg');
+  img.style.display='block';
+  document.getElementById('camOffline').style.display='none';
+  document.getElementById('camStat').textContent='Reconnecting...';
+  img.src='/api/camera/stream?t='+Date.now();
+}
+</script>
+function takeSnapshot(){
+  window.open('/api/camera/snapshot','_blank');
+}
+</script>
+{% endblock %}

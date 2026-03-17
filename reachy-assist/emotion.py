@@ -80,3 +80,6 @@ class EmotionDetector:
             best = "neutral"
         print(f"[EMOTION] Detected: {best} (keyword match)")
         return best
+
+def get_keywords_for(emotion: str) -> list[str]:
+    return _KEYWORDS.get(emotion, [])

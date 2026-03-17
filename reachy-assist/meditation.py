@@ -125,3 +125,6 @@ class MeditationGuide:
     def stop(self) -> str:
         self.active = False
         return "Okay, we'll stop here. Remember, even a little mindfulness goes a long way."
+
+def get_session_names() -> list:
+    return [s["name"] for s in SESSIONS.values()]

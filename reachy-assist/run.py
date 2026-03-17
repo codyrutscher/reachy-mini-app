@@ -1,6 +1,27 @@
 """Entry point for the Reachy accessibility assistant."""
 
 import argparse
+import os
+import warnings
+
+# Suppress noisy protobuf deprecation warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf")
+
+
+def _load_env():
+    """Load .env file from the script's directory."""
+    env_path = os.path.join(os.path.dirname(__file__), ".env")
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, val = line.split("=", 1)
+                    os.environ.setdefault(key.strip(), val.strip())
+
+
+_load_env()
+
 from interaction import InteractionLoop
 
 

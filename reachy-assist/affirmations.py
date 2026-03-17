@@ -25,6 +25,23 @@ AFFIRMATIONS = [
     "Rest when you need to. You've earned it.",
     "Your stories and memories are precious gifts.",
     "Tomorrow holds new adventures, but today is beautiful too.",
+    "I am enough, exactly as I am right now.",
+    "My value isn't determined by my productivity.",
+    "I bring something unique to every room I'm in.",
+    "I can figure out hard things — I've done it before.",
+    "Challenges are shaping me, not breaking me.",
+    "Every step forward counts, no matter how small.",
+    "I am becoming a better version of myself every day.",
+    "My skills are real and they matter.",
+    "I am capable of building things that make a difference.",
+    "I trust my instincts and my problem-solving ability.",
+    "I don't have to have everything figured out today.",
+    "I am allowed to rest without guilt.",
+    "I choose to focus on what I can control.",
+    "Peace is available to me in this moment.",
+    "I was made with intention and for a reason.",
+    "My life has meaning beyond what I can see right now.",
+    "I am not walking this road alone.",
 ]
 
 MOTIVATIONAL = [
@@ -48,9 +65,22 @@ GRATITUDE_PROMPTS = [
     "What's your favorite thing about today so far?",
 ]
 
+EVENING_REFLECTIONS = [
+    "You did great today. Time to rest.",
+    "The day is done. Let your mind be at peace.",
+    "You deserve a good night's sleep.",
+    "Tomorrow is a fresh start. Tonight, just relax.",
+    "Close your eyes and let go of today's worries.",
+    "You are safe, you are loved, you are enough.",
+    "Rest well. You've earned it.",
+]
+
 _daily_affirmation = None
 _daily_date = None
 
+def evening_reflection() -> str:
+    """Get a calming evening reflection."""
+    return random.choice(EVENING_REFLECTIONS)
 
 def get_daily_affirmation() -> str:
     """Get today's affirmation (same one all day)."""
@@ -81,3 +111,6 @@ def morning_affirmation() -> str:
     """Full morning affirmation with greeting."""
     aff = get_daily_affirmation()
     return f"Here's your affirmation for today: {aff}"
+
+
+

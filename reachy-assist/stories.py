@@ -130,3 +130,6 @@ class StoryReader:
         self.active = False
         self._current_story = None
         return f"Okay, we'll stop {title} for now. We can pick it up again anytime!"
+    
+def get_story_count() -> int:
+    return len(STORIES)

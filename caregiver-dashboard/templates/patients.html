@@ -1,6 +1,36 @@
 {% extends "_base.html" %}
 {% block title %}Patients — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .detail-panel { position: fixed; right: -420px; top: 52px; width: 420px; height: calc(100vh - 52px);
+    background: var(--card); border-left: 1px solid var(--border); z-index: 150;
+    transition: right 0.3s; overflow-y: auto; padding: 20px; }
+  .detail-panel.open { right: 0; }
+  .detail-overlay { position: fixed; inset: 0; top: 52px; background: rgba(0,0,0,0.4); z-index: 140;
+    display: none; }
+  .detail-overlay.show { display: block; }
+  .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .detail-name { font-size: 18px; font-weight: 600; }
+  .detail-close { background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .detail-section { margin-bottom: 16px; }
+  .detail-section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600; }
+  .detail-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .detail-row-label { color: var(--muted); }
+  .note-item { background: var(--card2); border-radius: 8px; padding: 10px; margin-bottom: 6px; font-size: 13px; }
+  .note-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .note-input-row { display: flex; gap: 8px; margin-top: 8px; }
+  .note-input { flex: 1; background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none; }
+  .search-bar { background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 14px; border-radius: 8px; font-size: 14px; outline: none; width: 260px; }
+  .search-bar:focus { border-color: var(--blue); }
+  .search-bar::placeholder { color: var(--muted); }
 
+  tr:nth-child(even) {
+    background-color: var(--card2);
+  }
+</style>
+{% endblock %}
 {% block body %}
 <div class="page">
   <div class="page-header">
@@ -8,7 +38,10 @@
       <div class="page-title">👥 Patients</div>
       <div class="page-subtitle">Manage patient profiles and view their status</div>
     </div>
-    <button class="btn btn-primary" onclick="showAddModal()">+ Add Patient</button>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input class="search-bar" id="searchInput" placeholder="Search patients..." oninput="filterPatients()">
+      <button class="btn btn-primary" onclick="showAddModal()">+ Add Patient</button>
+    </div>
   </div>
 
   <div class="grid-4" id="patientStats" style="margin-bottom:20px;"></div>
@@ -18,6 +51,7 @@
       <thead>
         <tr>
           <th>Patient</th>
+          <th>Type</th>
           <th>Room</th>
           <th>Mood</th>
           <th>Last Active</th>
@@ -33,6 +67,16 @@
       <p>No patients added yet. Click "Add Patient" to get started.</p>
     </div>
   </div>
+</div>
+
+<!-- Detail Panel -->
+<div class="detail-overlay" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detailPanel">
+  <div class="detail-header">
+    <div class="detail-name" id="detailName"></div>
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div id="detailContent"></div>
 </div>
 
 <!-- Add Patient Modal -->
@@ -54,12 +98,19 @@
       </div>
     </div>
     <div class="form-group">
+      <label class="form-label">Patient Type</label>
+      <select class="form-input" id="pType">
+        <option value="elderly">👴 Elderly</option>
+        <option value="disabled">♿ Disabled</option>
+      </select>
+    </div>
+    <div class="form-group">
       <label class="form-label">Conditions / Notes</label>
       <textarea class="form-input" id="pNotes" placeholder="e.g. Mild dementia, diabetes"></textarea>
     </div>
     <div class="form-group">
       <label class="form-label">Emergency Contact</label>
-      <input class="form-input" id="pContact" placeholder="e.g. Son - John - 555-1234">
+      <input class="form-input" id="pContact" placeholder="e.g. Son — [name] — [phone]">
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="hideAddModal()">Cancel</button>
@@ -72,63 +123,153 @@
 {% block extra_js %}
 <script>
 let patients = [];
+let patientNotes = {};
+var MOOD_EMOJI = {joy:'😊', sadness:'😢', anger:'😠', fear:'😨', surprise:'😲', neutral:'😐', unknown:'❓'};
+
 
 async function loadPatients() {
   try { patients = await fetch('/api/patients').then(r=>r.json()); } catch(e) { patients=[]; }
   render();
 }
 
-function render() {
-  var body = document.getElementById('patientBody');
-  var empty = document.getElementById('emptyPatients');
-  var stats = document.getElementById('patientStats');
+function filterPatients(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  render(q);
+}
 
-  var total = patients.length;
-  var active = patients.filter(function(p){return p.status==='active';}).length;
-  var alertCount = patients.reduce(function(s,p){return s+(p.alerts_today||0);},0);
-  var needsAtt = patients.filter(function(p){return (p.alerts_today||0)>0;}).length;
+function render(filter) {
+  const body = document.getElementById('patientBody');
+  const empty = document.getElementById('emptyPatients');
+  const stats = document.getElementById('patientStats');
+
+  let filtered = patients;
+  if(filter) filtered = patients.filter(p=>(p.name||'').toLowerCase().includes(filter)||(p.room||'').toLowerCase().includes(filter)||(p.conditions||'').toLowerCase().includes(filter));
+
+  const total = patients.length;
+  const active = patients.filter(p => p.status === 'active').length;
+  const alertCount = patients.reduce((s, p) => s + (p.alerts_today || 0), 0);
+  const needsAtt = patients.filter(p => (p.alerts_today || 0) > 0).length;
 
   stats.innerHTML = [
     {icon:'👥',num:total,label:'Total Patients',color:'var(--blue)'},
     {icon:'✅',num:active,label:'Active Now',color:'var(--green)'},
     {icon:'⚠️',num:alertCount,label:'Alerts Today',color:'var(--orange)'},
     {icon:'🔔',num:needsAtt,label:'Need Attention',color:'var(--red)'},
-  ].map(function(s){return '<div class="stat"><div class="stat-icon">'+s.icon+'</div><div class="stat-num" style="color:'+(s.num>0?s.color:'var(--muted)')+'">'+s.num+'</div><div class="stat-label">'+s.label+'</div></div>';}).join('');
+  ].map(s=>`<div class="stat">
+    <div class="stat-icon">${s.icon}</div>
+    <div class="stat-num" style="color:${s.num>0?s.color:'var(--muted)'}">${s.num}</div>
+    <div class="stat-label">${s.label}</div></div>`).join('');
 
-  if (!patients.length) { body.innerHTML=''; empty.style.display='block'; return; }
+  if (!filtered.length) { body.innerHTML=''; empty.style.display='block'; return; }
   empty.style.display='none';
 
-  body.innerHTML = patients.map(function(p) {
-    var moodColors = {joy:'green',sadness:'blue',anger:'red',fear:'purple',neutral:'muted',unknown:'muted'};
-    var mc = moodColors[p.mood] || 'muted';
-    return '<tr>'
-      +'<td><div style="font-weight:500;">'+p.name+'</div>'
-      +'<div style="font-size:12px;color:var(--muted);">'+(p.age?p.age+' yrs ':' ')+(p.conditions?p.conditions.substring(0,30):'')+'</div></td>'
-      +'<td>'+(p.room||'—')+'</td>'
-      +'<td><span class="badge badge-'+mc+'">'+(p.mood||'unknown')+'</span></td>'
-      +'<td style="font-size:13px;color:var(--muted);">'+(p.last_active||'Never')+'</td>'
-      +'<td>'+((p.alerts_today||0)>0?'<span class="badge badge-red">'+p.alerts_today+'</span>':'<span style="color:var(--muted)">0</span>')+'</td>'
-      +'<td><span class="badge badge-'+(p.status==='active'?'green':'muted')+'">'+(p.status||'inactive')+'</span></td>'
-      +'<td><button class="btn btn-ghost btn-sm" onclick="removePatient('+p.id+')">x</button></td>'
-      +'</tr>';
+  const moodBadge = m => {
+    const c = {joy:'green',sadness:'blue',anger:'red',fear:'purple',neutral:'muted',unknown:'muted'};
+    const emoji = MOOD_EMOJI[m] || '❓';
+    return '<span class="badge badge-'+(c[m]||'muted')+'" style="font-size:13px;">'+emoji+' '+(m||'unknown')+'</span>';
+  };
+
+  body.innerHTML = filtered.map(p => {
+    var typeBadge = p.patient_type === 'disabled' ? '<span class="badge badge-purple">Disabled</span>' : '<span class="badge badge-blue">Elderly</span>';
+    return '<tr style="cursor:pointer;" onclick="openDetail('+p.id+')">'
+    +'<td><div style="font-weight:500;">'+p.name+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);">'+(p.age?p.age+' yrs':'')+' '+(p.conditions?p.conditions.substring(0,30):'')+'</div></td>'
+    +'<td>'+typeBadge+'</td>'
+    +'<td>'+(p.room||'—')+'</td>'
+    +'<td>'+moodBadge(p.mood||'unknown')+'</td>'
+    +'<td style="font-size:13px;color:var(--muted);">'+(p.last_active||'Never')+'</td>'
+    +'<td>'+((p.alerts_today||0)>0?'<span class="badge badge-red">'+p.alerts_today+'</span>':'<span style="color:var(--muted)">0</span>')+'</td>'
+    +'<td><span class="badge badge-'+(p.status==='active'?'green':'muted')+'">'+(p.status||'inactive')+'</span></td>'
+    +'<td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();removePatient('+p.id+')">✕</button></td>'
+    +'</tr>';
   }).join('');
+}
+
+async function openDetail(id){
+  const p=patients.find(x=>x.id===id);
+  if(!p) return;
+  document.getElementById('detailName').textContent=p.name;
+  document.getElementById('detailOverlay').classList.add('show');
+  document.getElementById('detailPanel').classList.add('open');
+
+  // Load notes for this patient
+  let notes=[];
+  try{notes=await fetch('/api/notes?patient_id='+id).then(r=>r.json());}catch(e){}
+
+  // Load vitals
+  let vitals={};
+  try{vitals=await fetch('/api/vitals/latest?patient_id='+id).then(r=>r.json());}catch(e){}
+
+  const moodColor={joy:'var(--green)',sadness:'var(--blue)',anger:'var(--red)',fear:'var(--purple)',neutral:'var(--muted)'};
+
+  let html='<div class="detail-section">';
+  html+='<div class="detail-section-title">Patient Info</div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Age</span><span>'+(p.age||'—')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Room</span><span>'+(p.room||'—')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Type</span><span>'+(p.patient_type||'elderly')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Conditions</span><span>'+(p.conditions||'None listed')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Emergency Contact</span><span>'+(p.emergency_contact||'—')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Mood</span><span style="color:'+(moodColor[p.mood]||'var(--muted)')+'">'+(p.mood||'unknown')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Last Active</span><span>'+(p.last_active||'Never')+'</span></div>';
+  html+='<div class="detail-row"><span class="detail-row-label">Status</span><span class="badge badge-'+(p.status==='active'?'green':'muted')+'">'+(p.status||'inactive')+'</span></div>';
+  html+='</div>';
+
+  // Vitals section
+  html+='<div class="detail-section"><div class="detail-section-title">Latest Vitals</div>';
+  if(vitals&&(vitals.heart_rate||vitals.spo2||vitals.temperature)){
+    if(vitals.heart_rate) html+='<div class="detail-row"><span class="detail-row-label">Heart Rate</span><span>'+vitals.heart_rate+' bpm</span></div>';
+    if(vitals.spo2) html+='<div class="detail-row"><span class="detail-row-label">SpO₂</span><span>'+vitals.spo2+'%</span></div>';
+    if(vitals.bp_systolic) html+='<div class="detail-row"><span class="detail-row-label">Blood Pressure</span><span>'+vitals.bp_systolic+'/'+vitals.bp_diastolic+'</span></div>';
+    if(vitals.temperature) html+='<div class="detail-row"><span class="detail-row-label">Temperature</span><span>'+vitals.temperature+'°F</span></div>';
+    if(vitals.time) html+='<div style="font-size:11px;color:var(--muted);margin-top:4px;">Reading: '+vitals.time+'</div>';
+  } else {
+    html+='<div style="color:var(--muted);font-size:13px;">No vitals recorded</div>';
+  }
+  html+='</div>';
+
+  // Notes section
+  html+='<div class="detail-section"><div class="detail-section-title">Caregiver Notes</div>';
+  if(notes.length){
+    html+=notes.map(n=>'<div class="note-item">'+n.note+'<div class="note-meta">'+n.author+' · '+n.time+'</div></div>').join('');
+  } else {
+    html+='<div style="color:var(--muted);font-size:13px;">No notes yet</div>';
+  }
+  html+='<div class="note-input-row"><input class="note-input" id="noteInput" placeholder="Add a note..." onkeydown="if(event.key===\'Enter\')addNote('+id+')"><button class="btn btn-primary btn-sm" onclick="addNote('+id+')">Add</button></div>';
+  html+='</div>';
+
+  document.getElementById('detailContent').innerHTML=html;
+}
+
+function closeDetail(){
+  document.getElementById('detailOverlay').classList.remove('show');
+  document.getElementById('detailPanel').classList.remove('open');
+}
+
+async function addNote(pid){
+  const input=document.getElementById('noteInput');
+  const text=input.value.trim();
+  if(!text) return;
+  await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({note:text,patient_id:pid})});
+  input.value='';
+  openDetail(pid);
 }
 
 function showAddModal() { document.getElementById('addModal').classList.add('show'); }
 function hideAddModal() { document.getElementById('addModal').classList.remove('show'); }
 
 async function addPatient() {
-  var data = {
+  const data = {
     name: document.getElementById('pName').value.trim(),
     room: document.getElementById('pRoom').value.trim(),
     age: parseInt(document.getElementById('pAge').value) || null,
+    patient_type: document.getElementById('pType').value,
     conditions: document.getElementById('pNotes').value.trim(),
     emergency_contact: document.getElementById('pContact').value.trim(),
   };
   if (!data.name) return alert('Please enter a name');
   await fetch('/api/patients',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   hideAddModal();
-  ['pName','pRoom','pAge','pNotes','pContact'].forEach(function(id){document.getElementById(id).value='';});
+  ['pName','pRoom','pAge','pNotes','pContact'].forEach(id=>document.getElementById(id).value='');
   loadPatients();
 }
 
@@ -138,7 +279,7 @@ async function removePatient(id) {
   loadPatients();
 }
 
-onSSE('status', function() { loadPatients(); });
+onSSE('status', () => loadPatients());
 loadPatients();
 </script>
 {% endblock %}

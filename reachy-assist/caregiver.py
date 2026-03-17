@@ -51,6 +51,15 @@ class CaregiverAlerts:
         # Always log to file
         self._log_alert(alert)
 
+        # Save to Supabase
+        try:
+            import db_supabase as _db
+            if _db.is_available():
+                severity = "critical" if alert_type in ("CRISIS", "EMERGENCY", "FALL_DETECTED") else "normal"
+                _db.save_alert(alert_type, message, severity=severity)
+        except Exception:
+            pass
+
         # Send to web dashboard
         threading.Thread(
             target=self._send_to_dashboard, args=(alert,), daemon=True

@@ -3,5 +3,5 @@ flask-cors
 bcrypt
 
 # PostgreSQL/Supabase support (optional — falls back to SQLite)
-# pip install psycopg2-binary
+psycopg2-binary
 # Set DATABASE_URL or SUPABASE_DB_URL env var to enable

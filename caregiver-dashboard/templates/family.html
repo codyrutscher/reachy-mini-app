@@ -21,8 +21,17 @@
       </div>
       <div class="form-group">
         <label class="form-label">Message</label>
-        <textarea class="form-input" id="familyMsg" rows="3" placeholder="Write a loving message..."></textarea>
+        <textarea class="form-input" id="familyMsg" rows="3" placeholder="Write a loving message..." maxlength="300" oninput="updateCharCount()"></textarea>
+        <div style="font-size:11px;color:var(--muted);text-align:right;margin-top:4px;" id="charCount">300 characters remaining</div>
       </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="quickFill('I love you so much!')">❤️ I love you</button>
+        <button class="btn btn-ghost btn-sm" onclick="quickFill('See you soon! Can\'t wait.')">👋 See you soon</button>
+        <button class="btn btn-ghost btn-sm" onclick="quickFill('Thinking of you today.')">💭 Thinking of you</button>
+        <button class="btn btn-ghost btn-sm" onclick="quickFill('Hope you\'re having a great day!')">☀️ Great day</button>
+        <button class="btn btn-ghost btn-sm" onclick="quickFill('You are so loved. Never forget that.')">🤗 You are loved</button>
+      </div>
+
       <button class="btn btn-primary" onclick="sendFamilyMsg()">Send Message via Reachy</button>
     </div>
 
@@ -87,10 +96,12 @@ function renderMessages(msgs){
 function renderMoods(moods){
   var el=document.getElementById('moodInfo');
   if(!moods.length){el.innerHTML='<div style="color:var(--muted);text-align:center;padding:20px;">No mood data yet.</div>';return;}
+  var MOOD_COLORS={joy:'var(--green)',sadness:'var(--blue)',anger:'var(--red)',fear:'var(--purple)',surprise:'var(--yellow)',neutral:'var(--muted)'};
   el.innerHTML=moods.slice(-20).reverse().map(function(m){
-    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">'+
-      '<span style="font-size:18px;">'+(MOOD_EMOJI[m.mood]||'❓')+'</span>'+
-      '<span style="font-size:13px;flex:1;">'+m.mood+'</span>'+
+    var color=MOOD_COLORS[m.mood]||'var(--muted)';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:28px;">'+(MOOD_EMOJI[m.mood]||'❓')+'</span>'+
+      '<span style="font-size:13px;flex:1;font-weight:500;color:'+color+';">'+m.mood+'</span>'+
       '<span style="font-size:11px;color:var(--muted);">'+m.time+'</span></div>';
   }).join('');
 }
@@ -105,7 +116,7 @@ function renderSummary(status,moods){
   var dominantMood=dominant?dominant[0]:'unknown';
 
   el.innerHTML='<div style="text-align:center;">'+
-    '<div style="font-size:48px;margin-bottom:8px;">'+(MOOD_EMOJI[mood]||'❓')+'</div>'+
+    '<div style="font-size:64px;margin-bottom:8px;">'+(MOOD_EMOJI[mood]||'❓')+'</div>'+
     '<div style="font-size:18px;font-weight:600;">'+name+'</div>'+
     '<div style="font-size:13px;color:var(--muted);margin-top:4px;">Current mood: '+mood+'</div>'+
     '<div style="font-size:13px;color:var(--muted);">Last active: '+lastActive+'</div>'+
@@ -128,6 +139,20 @@ function renderVitals(v){
       '<div class="stat-label">'+s.label+'</div></div>';
   }).join('');
 }
+
+function quickFill(text){
+  document.getElementById('familyMsg').value = text;
+  updateCharCount();
+}
+
+function updateCharCount(){
+  var el=document.getElementById('familyMsg');
+  var remaining=300-el.value.length;
+  var counter=document.getElementById('charCount');
+  counter.textContent=remaining+' characters remaining';
+  counter.style.color=remaining<30?'var(--red)':remaining<80?'var(--orange)':'var(--muted)';
+}
+
 
 async function sendFamilyMsg(){
   var name=document.getElementById('familyName').value.trim()||'Family';

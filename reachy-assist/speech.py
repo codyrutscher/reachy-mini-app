@@ -74,40 +74,61 @@ class SpeechEngine:
 
         import numpy as np
         import sounddevice as sd
+        import time as _time
         import subprocess
 
-        # Play a short beep so user knows to start talking
+        # Quick non-blocking beep
         subprocess.Popen(
             ["afplay", "/System/Library/Sounds/Tink.aiff"],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
 
-        duration = 8  # seconds — generous window
-        print(f"[SPEECH] Listening for {duration}s... (speak now)")
+        # Voice-activity-based recording — stops when you stop talking
+        max_duration = 20       # absolute max seconds
+        silence_threshold = 0.008  # RMS below this = silence
+        silence_timeout = 2.5   # seconds of silence after speech to auto-stop
+        min_speech = 0.4        # min speech duration before silence-stop kicks in
+        chunk_ms = 100          # chunk size in ms
+        chunk_size = int(SAMPLE_RATE * chunk_ms / 1000)
 
-        audio = sd.rec(
-            int(SAMPLE_RATE * duration),
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-        )
-        sd.wait()
+        chunks = []
+        speech_started = False
+        silence_start = None
+        speech_duration = 0.0
 
-        # Trim trailing silence so Whisper doesn't hallucinate
-        audio_flat = audio.flatten()
-        rms_window = int(SAMPLE_RATE * 0.1)  # 100ms windows
-        end = len(audio_flat)
-        for i in range(len(audio_flat) - rms_window, 0, -rms_window):
-            window_rms = float(np.sqrt(np.mean(audio_flat[i:i+rms_window] ** 2)))
-            if window_rms > 0.003:
-                end = min(i + rms_window * 3, len(audio_flat))  # keep 300ms after last speech
-                break
-        audio_flat = audio_flat[:end]
+        stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1,
+                                dtype="float32", blocksize=chunk_size)
+        stream.start()
 
-        # Check if there was any speech at all
+        try:
+            total = 0
+            max_frames = int(SAMPLE_RATE * max_duration)
+            while total < max_frames:
+                data, _ = stream.read(chunk_size)
+                chunks.append(data.copy())
+                total += len(data)
+
+                rms = float(np.sqrt(np.mean(data ** 2)))
+                if rms > silence_threshold:
+                    speech_started = True
+                    silence_start = None
+                    speech_duration += chunk_ms / 1000
+                elif speech_started:
+                    if silence_start is None:
+                        silence_start = _time.time()
+                    elif (_time.time() - silence_start > silence_timeout
+                          and speech_duration > min_speech):
+                        break
+        finally:
+            stream.stop()
+            stream.close()
+
+        if not chunks:
+            return ""
+
+        audio_flat = np.concatenate(chunks).flatten()
         peak_rms = float(np.sqrt(np.mean(audio_flat ** 2)))
-        if peak_rms < 0.002:
-            print("[SPEECH] No speech detected")
+        if peak_rms < 0.002 or not speech_started:
             return ""
 
         print(f"[SPEECH] Processing {len(audio_flat)/SAMPLE_RATE:.1f}s of audio")
@@ -136,16 +157,61 @@ class SpeechEngine:
             return
 
         print(f"[SPEECH] Saying: '{text}'")
-        # Use macOS 'say' command — more reliable than pyttsx3
+
+        # Try OpenAI TTS first (sounds human)
+        if self._speak_openai(text):
+            self._post_speak_pause()
+            return
+
+        # Fallback to macOS 'say'
+        self._speak_macos(text)
+        self._post_speak_pause()
+
+    def _post_speak_pause(self):
+        """Brief pause after speaking so the mic doesn't pick up echo."""
+        import time
+        time.sleep(0.6)
+
+    def _speak_openai(self, text: str) -> bool:
+        """Use OpenAI TTS for natural-sounding speech. Returns True if successful."""
+        import os
+        if not os.environ.get("OPENAI_API_KEY"):
+            return False
+        try:
+            from openai import OpenAI
+            import subprocess
+            import tempfile
+
+            client = OpenAI()
+            # Voices: alloy, echo, fable, nova, onyx, shimmer
+            # nova = warm female, onyx = deep male, shimmer = gentle female
+            voice = os.environ.get("REACHY_VOICE", "nova")
+            resp = client.audio.speech.create(
+                model="tts-1",
+                voice=voice,
+                input=text,
+                speed=0.95,
+            )
+            # Write to temp file and play
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                f.write(resp.content)
+                tmp_path = f.name
+            subprocess.run(["afplay", tmp_path], timeout=30)
+            os.unlink(tmp_path)
+            return True
+        except Exception as e:
+            print(f"[SPEECH] OpenAI TTS error: {e}")
+            return False
+
+    def _speak_macos(self, text: str):
+        """Fallback: macOS say command."""
         import subprocess
-        # Pick a voice based on language
         voice_map = {
             "en": "Samantha", "es": "Monica", "fr": "Thomas",
             "de": "Anna", "it": "Alice", "pt": "Luciana",
             "zh": "Ting-Ting", "ja": "Kyoko", "ko": "Yuna",
         }
         voice = voice_map.get(self.language, "Samantha")
-        # Clean text for shell safety
         clean = text.replace('"', '\\"')
         try:
             subprocess.run(
@@ -154,7 +220,6 @@ class SpeechEngine:
             )
         except Exception as e:
             print(f"[SPEECH] TTS error: {e}")
-            # Fallback to pyttsx3
             if self.tts_engine:
                 self.tts_engine.say(text)
                 self.tts_engine.runAndWait()

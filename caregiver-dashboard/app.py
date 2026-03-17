@@ -202,6 +202,11 @@ def schedule_page():
 def reports_page():
     return render_template("reports.html", active_page="reports")
 
+@app.route("/camera")
+@login_required
+def camera_page():
+    return render_template("camera.html", active_page="camera")
+
 @app.route("/activity")
 @login_required
 def activity_page():
@@ -241,6 +246,15 @@ def ack_alert(alert_id):
 def clear_alerts():
     remaining = db.clear_acked_alerts()
     return jsonify({"status": "ok", "remaining": remaining})
+
+@app.route("/api/activity/stats", methods=["GET"])
+def activity_stats():
+    activities = db.get_activity_log()
+    counts = {}
+    for a in activities:
+        action = a["action"]
+        counts[action] = counts.get(action, 0) + 1
+    return jsonify(counts)
 
 
 # ── Messages API ────────────────────────────────────────────────────
@@ -718,9 +732,45 @@ def set_lang():
 def stream():
     return Response(sse_stream(), mimetype="text/event-stream")
 
+# ── Camera stream proxy ─────────────────────────────────────────────
+
+@app.route("/api/camera/stream")
+def camera_stream_proxy():
+    """Proxy the MJPEG camera stream from the robot so the dashboard can embed it."""
+    camera_url = os.environ.get("CAMERA_STREAM_URL", "http://localhost:5556/stream")
+    try:
+        import urllib.request
+        req = urllib.request.Request(camera_url)
+        resp = urllib.request.urlopen(req, timeout=5)
+        def generate():
+            try:
+                while True:
+                    chunk = resp.read(4096)
+                    if not chunk:
+                        break
+                    yield chunk
+            except Exception:
+                pass
+        return Response(generate(), mimetype="multipart/x-mixed-replace; boundary=frame")
+    except Exception:
+        # Return a 1x1 transparent pixel if camera unavailable
+        return Response(status=503)
+
+@app.route("/api/camera/snapshot")
+def camera_snapshot():
+    """Get a single frame from the robot camera."""
+    camera_url = os.environ.get("CAMERA_STREAM_URL", "http://localhost:5556/snapshot")
+    try:
+        import urllib.request
+        resp = urllib.request.urlopen(camera_url, timeout=3)
+        data = resp.read()
+        return Response(data, mimetype="image/jpeg")
+    except Exception:
+        return Response(status=503)
+
 
 if __name__ == "__main__":
     print("\n=== Caregiver Dashboard ===")
     print("Open http://localhost:5555 in your browser")
     print("Default login: admin / admin\n")
-    app.run(host="0.0.0.0", port=5555, debug=False, threaded=True)
+    app.run(host="0.0.0.0", port=5555, debug=True, threaded=True)
