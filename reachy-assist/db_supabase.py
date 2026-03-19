@@ -121,6 +121,14 @@ def init_bot_tables():
                     duration_seconds INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT NOW()
                 );
+                CREATE TABLE IF NOT EXISTS bot_pain_reports (
+                    id SERIAL PRIMARY KEY,
+                    patient_id TEXT DEFAULT 'default',
+                    location TEXT DEFAULT '',
+                    severity INTEGER DEFAULT 0,
+                    notes TEXT DEFAULT '',
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
                 CREATE TABLE IF NOT EXISTS bot_sleep_log (
                     id SERIAL PRIMARY KEY,
                     patient_id TEXT DEFAULT 'default',
@@ -138,6 +146,7 @@ def init_bot_tables():
                     topics_discussed TEXT DEFAULT '[]',
                     facts_learned TEXT DEFAULT '[]',
                     duration_minutes REAL DEFAULT 0,
+                    summary_text TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT NOW()
                 );
                 CREATE TABLE IF NOT EXISTS bot_weekly_reports (
@@ -173,9 +182,25 @@ def init_bot_tables():
                     acknowledged BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP DEFAULT NOW()
                 );
+                CREATE TABLE IF NOT EXISTS bot_chat_history (
+                    id SERIAL PRIMARY KEY,
+                    patient_id TEXT UNIQUE DEFAULT 'default',
+                    history JSONB DEFAULT '[]',
+                    user_name TEXT DEFAULT '',
+                    user_facts JSONB DEFAULT '[]',
+                    updated_at TIMESTAMP DEFAULT NOW()
+                );
             """)
         _available = True
-        print("[DB] Bot Supabase tables ready (12 tables)")
+        print("[DB] Bot Supabase tables ready (13 tables)")
+
+        # Migrations — add columns that may not exist on older databases
+        try:
+            with conn.cursor() as cur:
+                cur.execute("ALTER TABLE bot_session_summaries ADD COLUMN IF NOT EXISTS summary_text TEXT DEFAULT ''")
+        except Exception:
+            pass  # column already exists or DB doesn't support IF NOT EXISTS
+
         return True
     except Exception as e:
         print(f"[DB] Supabase init failed: {e}")
@@ -370,6 +395,23 @@ def get_exercises(patient_id="default", limit=20):
     except Exception as e: print(f"[DB] get_exercises: {e}"); return []
 
 
+# ── Pain Reports ────────────────────────────────────────────────────
+
+def save_pain_report(location, severity, notes="", patient_id="default"):
+    if not _available: return
+    try:
+        _execute("INSERT INTO bot_pain_reports (patient_id,location,severity,notes) VALUES (%s,%s,%s,%s)",
+                 (patient_id, location, severity, notes))
+    except Exception as e: print(f"[DB] save_pain_report: {e}")
+
+def get_pain_reports(patient_id="default", limit=20):
+    if not _available: return []
+    try:
+        return _execute("SELECT location,severity,notes,created_at FROM bot_pain_reports WHERE patient_id=%s ORDER BY id DESC LIMIT %s",
+                        (patient_id, limit), fetch=True) or []
+    except Exception as e: print(f"[DB] get_pain_reports: {e}"); return []
+
+
 # ── Sleep Log ───────────────────────────────────────────────────────
 
 def save_sleep_event(event_type, quality="", notes="", patient_id="default"):
@@ -392,16 +434,16 @@ def get_sleep_log(patient_id="default", limit=14):
 
 def save_session_summary(interactions, dominant_mood, mood_distribution,
                          topics_discussed, facts_learned, duration_minutes,
-                         patient_id="default"):
+                         patient_id="default", summary_text=""):
     if not _available: return
     try:
         _execute(
             "INSERT INTO bot_session_summaries "
-            "(patient_id,interactions,dominant_mood,mood_distribution,topics_discussed,facts_learned,duration_minutes) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            "(patient_id,interactions,dominant_mood,mood_distribution,topics_discussed,facts_learned,duration_minutes,summary_text) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (patient_id, interactions, dominant_mood,
              json.dumps(mood_distribution), json.dumps(topics_discussed),
-             json.dumps(facts_learned), duration_minutes))
+             json.dumps(facts_learned), duration_minutes, summary_text))
     except Exception as e: print(f"[DB] save_session_summary: {e}")
 
 def get_session_summaries(patient_id="default", limit=10):
@@ -409,7 +451,7 @@ def get_session_summaries(patient_id="default", limit=10):
     try:
         rows = _execute(
             "SELECT interactions,dominant_mood,mood_distribution,topics_discussed,"
-            "facts_learned,duration_minutes,created_at "
+            "facts_learned,duration_minutes,summary_text,created_at "
             "FROM bot_session_summaries WHERE patient_id=%s ORDER BY id DESC LIMIT %s",
             (patient_id, limit), fetch=True) or []
         for r in rows:
@@ -691,3 +733,45 @@ def get_patterns(patient_id="default", severity=None):
             "WHERE patient_id=%s ORDER BY detected_at DESC",
             (patient_id,), fetch=True) or []
     except Exception as e: print(f"[DB] get_patterns: {e}"); return []
+
+# ── Chat History (brain.history persistence) ────────────────────────
+
+def save_chat_history(history, user_name="", user_facts=None, patient_id="default"):
+    """Persist the brain's conversation history so it survives restarts.
+    Uses UPSERT — one row per patient, overwritten each save."""
+    if not _available: return
+    try:
+        _execute(
+            "INSERT INTO bot_chat_history (patient_id, history, user_name, user_facts, updated_at) "
+            "VALUES (%s, %s, %s, %s, NOW()) "
+            "ON CONFLICT (patient_id) DO UPDATE SET "
+            "history = EXCLUDED.history, user_name = EXCLUDED.user_name, "
+            "user_facts = EXCLUDED.user_facts, updated_at = NOW()",
+            (patient_id, json.dumps(history), user_name, json.dumps(user_facts or [])))
+    except Exception as e: print(f"[DB] save_chat_history: {e}")
+
+
+def get_chat_history(patient_id="default"):
+    """Restore the brain's conversation history from the last session.
+    Returns dict with 'history', 'user_name', 'user_facts' or None."""
+    if not _available: return None
+    try:
+        row = _execute(
+            "SELECT history, user_name, user_facts, updated_at FROM bot_chat_history "
+            "WHERE patient_id=%s", (patient_id,), fetchone=True)
+        if not row:
+            return None
+        # Parse JSON fields
+        hist = row.get("history", [])
+        if isinstance(hist, str):
+            hist = json.loads(hist)
+        facts = row.get("user_facts", [])
+        if isinstance(facts, str):
+            facts = json.loads(facts)
+        return {
+            "history": hist,
+            "user_name": row.get("user_name", ""),
+            "user_facts": facts,
+            "updated_at": row.get("updated_at"),
+        }
+    except Exception as e: print(f"[DB] get_chat_history: {e}"); return None

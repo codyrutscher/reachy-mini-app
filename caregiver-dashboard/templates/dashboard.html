@@ -53,24 +53,60 @@
     .dash-sidebar { max-height: 50vh; }
   }
 
-  .pulse-alert {
-    animation: pulseAlert 1.5s infinite;
+
+  /* Style for the + button to add custom quick messages */
+.plusbtn {
+  background: var(--input-bg);     /* same dark background as other buttons */
+  border: 1px dashed var(--border); /* dashed border so it looks like "add new" */
+  color: var(--muted);             /* gray text color */
+  padding: 6px 12px;              /* same padding as .qbtn */
+  border-radius: 16px;            /* same rounded corners as .qbtn */
+  cursor: pointer;                /* hand cursor on hover */
+  font-size: 14px;                /* slightly bigger so the + is visible */
+}
+.plusbtn:hover {
+  border-color: var(--blue);      /* blue border on hover, like the other buttons */
+  color: var(--text);             /* brighter text on hover */
+}
+
+/* Style for the inline input that appears when you click + */
+.custom-input {
+  background: var(--input-bg);
+  border: 1px solid var(--blue);  /* blue border so it's obvious it's active */
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 16px;            /* matches the button shape */
+  font-size: 12px;
+  outline: none;                  /* removes the default browser focus outline */
+  width: 180px;                   /* fixed width so it doesn't squish other buttons */
+}
+
+  /* Mini mood dots — row of colored circles showing recent mood trend */
+  .mood-dots {
+    display: flex;       /* lay children out horizontally in a row */
+    gap: 4px;            /* 4px space between each dot */
+    align-items: center; /* vertically center the dots */
+    margin-left: 8px;    /* a little breathing room from the mood badge */
   }
-  @keyframes pulseAlert {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+  .mood-dot {
+    width: 10px;              /* 10px wide */
+    height: 10px;             /* 10px tall — makes a square */
+    border-radius: 50%;       /* turns the square into a perfect circle */
+    transition: transform 0.2s; /* smooth grow animation on hover */
+    cursor: default;          /* normal arrow cursor, not a pointer */
+  }
+  .mood-dot:hover {
+    transform: scale(1.8);   /* grow 1.8x on hover so caregiver can see the color */
   }
 
   @keyframes pulse {
-  0% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.4); }
-  70% { box-shadow: 0 0 0 10px rgba(255, 80, 80, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0); }
-}
-
-.stat-alert {
-  animation: pulse 2s infinite;
-}
-
+    0% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(255, 80, 80, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 80, 80, 0); }
+  }
+  .pulse-alert {
+    animation: pulse 2s infinite;
+  }
 
 </style>
 {% endblock %}
@@ -86,8 +122,16 @@
         <div class="detail" id="patientDetail">Waiting for session...</div>
       </div>
       <div id="moodBadge"></div>
+      <div class="mood-dots" id="moodDots" title="Last 10 mood readings"></div>
+      <button id="soundToggle" onclick="toggleSound()" style="background:none;border:none;font-size:20px;cursor:pointer;" title="Toggle notification sound" aria-label="Toggle notification sound">🔔</button>
+
     </div>
-    <div class="grid-4" id="stats" style="margin-bottom:18px;"></div>
+    <div class="grid-4" id="stats" style="margin-bottom:18px;">
+      <div class="stat"><div class="skeleton" style="height:24px;width:24px;margin:0 auto;border-radius:50%;"></div><div class="skeleton" style="height:28px;width:40px;margin:8px auto;"></div><div class="skeleton" style="height:12px;width:60px;margin:0 auto;"></div></div>
+      <div class="stat"><div class="skeleton" style="height:24px;width:24px;margin:0 auto;border-radius:50%;"></div><div class="skeleton" style="height:28px;width:40px;margin:8px auto;"></div><div class="skeleton" style="height:12px;width:60px;margin:0 auto;"></div></div>
+      <div class="stat"><div class="skeleton" style="height:24px;width:24px;margin:0 auto;border-radius:50%;"></div><div class="skeleton" style="height:28px;width:40px;margin:8px auto;"></div><div class="skeleton" style="height:12px;width:60px;margin:0 auto;"></div></div>
+      <div class="stat"><div class="skeleton" style="height:24px;width:24px;margin:0 auto;border-radius:50%;"></div><div class="skeleton" style="height:28px;width:40px;margin:8px auto;"></div><div class="skeleton" style="height:12px;width:60px;margin:0 auto;"></div></div>
+    </div>
     <div class="grid-2" style="margin-bottom:18px;">
       <div class="card" style="padding:10px;">
         <div class="card-header" style="margin-bottom:8px;">
@@ -145,7 +189,10 @@
         <button class="qbtn" onclick="quickMsg('I will be there in a few minutes.')">🚶 On my way</button>
         <button class="qbtn" onclick="quickMsg('How are you feeling right now?')">❤️ Check in</button>
         <button class="qbtn" onclick="quickMsg('I love you. Everything is going to be okay.')">🤗 Comfort</button>
+        <div id="customBtns" style="display:contents;"></div>
+        <button class="plusbtn" onclick="openPrompt()">+</button>
       </div>
+      <div id="liveChatMessages" style="max-height:250px;overflow-y:auto;margin-bottom:8px;padding:8px;background:var(--input-bg);border-radius:8px;"></div>
       <div class="msg-row">
         <input class="msg-input" id="msgInput" placeholder="{{ t('message_placeholder') }}"
                onkeydown="if(event.key==='Enter')sendMsg()" aria-label="Message to patient">
@@ -160,6 +207,15 @@
 
 {% block extra_js %}
 <script>
+  // Load preference from localStorage (default: on)
+var soundOn = localStorage.getItem('soundEnabled') !== 'false';
+
+function toggleSound() {
+  soundOn = !soundOn;
+  localStorage.setItem('soundEnabled', soundOn);
+  document.getElementById('soundToggle').textContent = soundOn ? '🔔' : '🔇';
+}
+
 const TYPE_CFG = {
   CRISIS:{color:'var(--red)',icon:'🚨',label:'Crisis'},
   EMERGENCY:{color:'var(--red)',icon:'🆘',label:'Emergency'},
@@ -264,12 +320,17 @@ async function clearAcked(){
 async function sendMsg(){
   const input=document.getElementById('msgInput');
   const text=input.value.trim();if(!text)return;input.value='';
-  await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text,priority:'normal'})});
+  try{
+    await fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text,priority:'normal'})});
+    showToast('Message sent to Reachy');
+  }catch(e){ showToast('Failed to send message','error'); }
 }
 function quickMsg(text){
   fetch('/api/messages',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({text,priority:'normal'})});
+    body:JSON.stringify({text,priority:'normal'})})
+    .then(function(){ showToast('Quick message sent'); })
+    .catch(function(){ showToast('Failed to send','error'); });
 }
 function triggerSOS(){
   if(!confirm('Send emergency SOS alert? This will notify all caregivers.'))return;
@@ -308,25 +369,144 @@ function retryCam(){
   img.src='/api/camera/stream?t='+Date.now();
 }
 
+// Mini mood dots — fetch last 10 moods and render as colored circles
+async function renderMoodDots() {
+  // 1. Fetch the mood history from the API (returns an array of {mood, time} objects)
+  var moods = [];
+  try {
+    moods = await fetch('/api/mood-history').then(function(r) { return r.json(); });
+  } catch(e) { return; }  // if the fetch fails, just bail out
+
+  // 2. Grab the container div we added in the HTML
+  var container = document.getElementById('moodDots');
+
+  // 3. Take only the last 10 entries
+  //    .slice(-10) means "give me the last 10 items from the array"
+  //    If there are fewer than 10, it just gives you all of them
+  var recent = moods.slice(-10);
+
+  // 4. If no mood data exists yet, show a small message
+  if (!recent.length) {
+    container.innerHTML = '<span style="font-size:11px;color:var(--muted);">No mood data</span>';
+    return;
+  }
+
+  // 5. Build the HTML — one dot per mood reading
+  //    .map() loops through each mood entry and returns a new array of HTML strings
+  //    For each entry, we:
+  //      - Look up the color from MOOD_COLORS (e.g. "joy" → "var(--green)")
+  //      - Fall back to "var(--muted)" if the mood isn't in our map
+  //      - Set the background color via inline style
+  //      - Add a title attribute so hovering shows "joy" or "sadness" etc.
+  //    .join('') glues all the strings together with no separator
+  container.innerHTML = recent.map(function(m) {
+    var color = MOOD_COLORS[m.mood] || 'var(--muted)';
+    return '<div class="mood-dot" style="background:' + color + ';" title="' + m.mood + ' — ' + m.time + '"></div>';
+  }).join('');
+}
+
 async function init(){
   try{
     const[aRes,cRes,sRes]=await Promise.all([
       fetch('/api/alerts'),fetch('/api/conversation'),fetch('/api/status')]);
+    if(!aRes.ok || !cRes.ok || !sRes.ok) throw new Error('API returned error');
     alerts=await aRes.json();convo=await cRes.json();
     const status=await sRes.json();
     renderStats();renderAlerts();renderConvo();updatePatientBar(status);
-  }catch(e){console.error(e);}
-  document.getElementById('lastUpdated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
-
+    renderMoodDots();
+  }catch(e){
+    console.error('Init failed:',e);
+    document.getElementById('stats').innerHTML='<div style="grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);font-size:13px;">⚠️ Failed to load data. <button class="btn btn-ghost btn-sm" onclick="init()">Retry</button></div>';
+  }
+  updateTimestamp();
+  renderCustomBtns();
 }
 
-onSSE('alert',a=>{alerts.unshift(a);renderStats();renderAlerts();
-  if(['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST','HELP_REQUEST'].includes(a.type)&&Notification.permission==='granted')
-    new Notification(`Reachy: ${cfg(a.type).label}`,{body:a.message});
+
+function openPrompt() {
+  if (document.getElementById('customInput')) return;
+  var input = document.createElement('input');
+  input.id = 'customInput';
+  input.className = 'custom-input';
+  input.placeholder = 'Type message, press Enter';
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      var text = input.value.trim();
+      if (text) {
+        var customs = JSON.parse(localStorage.getItem('customQuickBtns') || '[]');
+        customs.push(text);
+        localStorage.setItem('customQuickBtns', JSON.stringify(customs));
+        renderCustomBtns();
+      }
+      input.remove();
+    }
+    if (e.key === 'Escape') {
+      input.remove();
+    }
+  });
+  var plusBtn = document.querySelector('.plusbtn');
+  plusBtn.parentElement.insertBefore(input, plusBtn);
+  input.focus();
+}
+
+function renderCustomBtns() {
+  var customs = JSON.parse(localStorage.getItem('customQuickBtns') || '[]');
+  var container = document.getElementById('customBtns');
+  if (!container) return;
+  container.innerHTML = customs.map(function(text, index) {
+    var escaped = text.replace(/'/g, "\\'");
+    return '<button class="qbtn" onclick="quickMsg(\'' + escaped + '\')">'
+      + '⭐ ' + text
+      + '<span onclick="event.stopPropagation();removeCustomBtn(' + index + ')" '
+      + 'style="margin-left:6px;color:var(--red);cursor:pointer;font-size:10px;">✕</span>'
+      + '</button>';
+  }).join('');
+}
+
+function removeCustomBtn(index) {
+  var customs = JSON.parse(localStorage.getItem('customQuickBtns') || '[]');
+  customs.splice(index, 1);
+  localStorage.setItem('customQuickBtns', JSON.stringify(customs));
+  renderCustomBtns();
+}
+
+
+function updateTimestamp(){
+  document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+
+onSSE('alert',a=>{alerts.unshift(a);renderStats();renderAlerts();updateTimestamp();
+  if(['CRISIS','EMERGENCY','MEDICATION_REQUEST','FOOD_REQUEST','HELP_REQUEST'].includes(a.type)){
+    if(Notification.permission==='granted')
+      new Notification(`Reachy: ${cfg(a.type).label}`,{body:a.message});
+    if(soundOn) new Audio('/static/sounds/sfx_alert.wav').play().catch(function(){});
+  }
 });
-onSSE('conversation',c=>{convo.push(c);renderConvo();});
-onSSE('status',s=>{updatePatientBar(s);});
+onSSE('conversation',c=>{convo.push(c);renderConvo();updateTimestamp();});
+onSSE('status',s=>{updatePatientBar(s);updateTimestamp();renderMoodDots();});
+onSSE('conversation', function(entry) {
+    var el = document.getElementById('liveChatMessages');
+    var speakers = {
+        patient: {icon: '🎙️', color: '#a855f7', label: 'Patient'},
+        reachy: {icon: '🤖', color: '#3b82f6', label: 'Reachy'},
+        caregiver: {icon: '👨‍⚕️', color: '#22c55e', label: 'Caregiver'}
+    };
+    var s = speakers[entry.speaker] || speakers.patient;
+    var time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    var div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);';
+    div.innerHTML = '<span style="font-size:16px;">' + s.icon + '</span>' +
+        '<div style="flex:1;"><span style="font-size:11px;font-weight:600;color:' + s.color + ';">' + s.label +
+        '</span> <span style="font-size:10px;color:var(--muted);">' + time + '</span>' +
+        '<div style="font-size:13px;margin-top:2px;">' + entry.text + '</div></div>';
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+});
+
+
 
 init();
+// Auto-refresh data every 30 seconds as a fallback
+setInterval(function(){ init(); }, 30000);
 </script>
 {% endblock %}

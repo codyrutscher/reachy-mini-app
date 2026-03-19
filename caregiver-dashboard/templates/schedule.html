@@ -115,6 +115,7 @@ async function addSched(){
   if(!d.text)return alert('Enter a message');
   await fetch('/api/scheduled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
   hideAddModal();document.getElementById('sText').value='';load();
+  showToast('Message scheduled');
 }
 async function quickSched(text,time,repeat){
   await fetch('/api/scheduled',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,time:time,repeat:repeat})});load();

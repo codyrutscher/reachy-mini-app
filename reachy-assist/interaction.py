@@ -182,27 +182,12 @@ class InteractionLoop:
     # ── Command detection ───────────────────────────────────────────
 
     def _check_command(self, text: str) -> str | None:
-        """Check if the user is asking for a specific feature."""
+        """Only intercept commands that NEED to run actual code (music, exercises,
+        safety alerts, sessions, etc.). Everything else goes to GPT for natural conversation."""
         lower = text.lower().strip()
 
-        # ── Weather ────────────────────────────────────────────────
-        if any(w in lower for w in ["weather", "what's the weather", "temperature",
-                                     "how's the weather", "is it cold", "is it hot",
-                                     "is it raining"]):
-            return self._handle_weather()
-
-        # ── Good morning (weather + greeting) ──────────────────────
-        if any(w in lower for w in ["good morning", "rise and shine"]):
-            self.robot.perform("wake up")
-            if not self._greeted_today:
-                self._greeted_today = True
-                from weather import weather_briefing
-                briefing = weather_briefing(self._weather_city)
-                return f"Good morning! I hope you slept well. {briefing} What would you like to do today?"
-            return "Good morning! Ready for a new day!"
-
-        # ── Check-in ───────────────────────────────────────────────
-        if any(w in lower for w in ["check-in", "check in", "checkin", "how am i doing", "daily check"]):
+        # ── Check-in (interactive multi-step session) ──────────────
+        if any(w in lower for w in ["check-in", "check in", "checkin", "daily check"]):
             return self.checkin.start()
 
         # ── Care requests -> alert caregiver ───────────────────────
@@ -258,17 +243,15 @@ class InteractionLoop:
                                      "yes i took", "medication taken", "pills taken"]):
             return self._handle_med_confirmation(text)
 
-        # ── Reminders ──────────────────────────────────────────────
-        if any(w in lower for w in ["remind me", "add reminder", "set reminder", "medication", "medicine"]):
+        # ── Reminders (needs to write to reminder system) ──────────
+        if any(w in lower for w in ["remind me", "add reminder", "set reminder"]):
             return self._handle_reminder_add(lower)
         if any(w in lower for w in ["my reminders", "list reminders", "what reminders", "show reminders"]):
             return self.reminders.list_reminders()
-        if any(w in lower for w in ["add appointment", "schedule appointment", "doctor appointment"]):
-            return self._handle_appointment_add(lower)
 
-        # ── Reminiscence ───────────────────────────────────────────
-        if any(w in lower for w in ["memory lane", "reminisce", "memories", "tell me about the past",
-                                     "remember when", "old times", "good old days"]):
+        # ── Reminiscence (interactive session) ─────────────────────
+        if any(w in lower for w in ["memory lane", "reminisce", "tell me about the past",
+                                     "old times", "good old days"]):
             theme = None
             for t in self.reminiscence.available_themes():
                 if t.replace("_", " ") in lower:
@@ -316,23 +299,15 @@ class InteractionLoop:
         if lower in ["next", "continue", "go on", "keep going"] and self.stories.is_active:
             return self.stories.next_page()
 
-        # ── Jokes ──────────────────────────────────────────────────
-        if any(w in lower for w in ["tell me a joke", "joke", "make me laugh",
-                                     "something funny", "funny", "another joke"]):
-            from jokes import tell_joke
-            self.robot.perform("wiggle")
-            self._log_activity("joke", "Told a joke")
-            return tell_joke()
-
-        # ── Sleep tracking ─────────────────────────────────────────
-        if any(w in lower for w in ["going to bed", "going to sleep", "bedtime",
+        # ── Sleep tracking (needs to log actual times) ──────────────
+        if any(w in lower for w in ["going to bed", "going to sleep",
                                      "goodnight", "good night", "time to sleep"]):
             from sleep_tracker import log_bedtime
             self.robot.perform("sleepy")
             self._log_activity("bedtime", "Patient going to sleep")
             return log_bedtime()
         if any(w in lower for w in ["just woke up", "i'm awake", "i am awake",
-                                     "woke up", "morning"]) and "good morning" not in lower:
+                                     "woke up"]) and "good morning" not in lower:
             from sleep_tracker import log_wake_time
             self._log_activity("wake_up", "Patient woke up")
             return log_wake_time()
@@ -341,62 +316,28 @@ class InteractionLoop:
             from sleep_tracker import sleep_report
             return sleep_report()
 
-        # ── Affirmations & motivation ──────────────────────────────
-        if any(w in lower for w in ["affirmation", "motivate me", "motivation",
-                                     "inspire me", "something positive", "cheer me up",
-                                     "i need encouragement", "encourage me"]):
-            from affirmations import get_affirmation
-            self.robot.express("joy")
-            return get_affirmation()
-        if any(w in lower for w in ["quote", "wisdom", "motivational quote"]):
-            from affirmations import get_motivation
-            self.robot.express("neutral")
-            return get_motivation()
-        if any(w in lower for w in ["grateful", "gratitude", "thankful"]):
-            from affirmations import get_gratitude_prompt
-            return get_gratitude_prompt()
-
-        # ── Calendar / appointments ────────────────────────────────
+        # ── Calendar (needs to write to tracker) ──────────────────
         if any(w in lower for w in ["add appointment", "schedule appointment",
-                                     "doctor appointment", "i have an appointment",
-                                     "dentist", "doctor visit"]):
+                                     "i have an appointment"]):
             from calendar_tracker import parse_appointment
             return parse_appointment(text)
         if any(w in lower for w in ["my appointments", "list appointments",
-                                     "what appointments", "upcoming appointments",
-                                     "calendar", "my schedule"]):
+                                     "upcoming appointments"]):
             from calendar_tracker import list_appointments
             return list_appointments()
 
-        # ── Companion chat topics ──────────────────────────────────
-        if any(w in lower for w in ["let's chat", "talk to me", "i'm bored",
-                                     "i am bored", "conversation", "chat with me",
-                                     "tell me something", "what should we talk about"]):
-            from companion import get_conversation_starter
-            self.robot.perform("curious")
-            return get_conversation_starter()
-        if any(w in lower for w in ["what can we talk about", "topics", "chat topics"]):
-            from companion import list_topics
-            return list_topics()
-
-        # ── Hydration reminder ─────────────────────────────────────
-        if any(w in lower for w in ["water", "thirsty", "hydration", "drink water",
-                                     "need a drink"]) and "bring" not in lower:
-            self._log_activity("hydration", "Patient mentioned water/thirst")
-            return "Staying hydrated is so important! Try to drink a glass of water every hour. Would you like me to set a water reminder?"
+        # ── Water reminder (needs to schedule via dashboard) ───────
         if "water reminder" in lower or "hydration reminder" in lower:
-            # Schedule hourly water reminders via dashboard
             self._post_dashboard("/api/scheduled", {
                 "text": "Time to drink some water! Stay hydrated!",
                 "time": "09:00", "repeat": "daily",
             })
             self._log_activity("hydration_reminder", "Set up water reminders")
-            return "I've set up a daily water reminder for you. I'll remind you to drink water throughout the day!"
+            return "I've set up a daily water reminder for you!"
 
-        # ── News ───────────────────────────────────────────────────
+        # ── News (fetches real data) ───────────────────────────────
         if any(w in lower for w in ["news", "headlines", "what's happening",
-                                     "what's going on in the world", "read me the news",
-                                     "today's news"]):
+                                     "read me the news", "today's news"]):
             from news import news_briefing
             self._log_activity("news", "Patient asked for news")
             return news_briefing()
@@ -416,7 +357,7 @@ class InteractionLoop:
         if lower in ["next", "continue", "go on", "keep going"] and self.meditation.is_active:
             return self.meditation.next_step()
 
-        # ── Voice journal ──────────────────────────────────────────
+        # ── Voice journal (interactive session) ────────────────────
         if any(w in lower for w in ["start journal", "journal entry", "write in my journal",
                                      "dear diary", "i want to journal", "voice journal"]):
             from journal import start_journal
@@ -429,30 +370,10 @@ class InteractionLoop:
             from journal import cancel_journal
             return cancel_journal()
 
-        # ── Date / time ───────────────────────────────────────────
-        if any(w in lower for w in ["what time is it", "what's the time", "tell me the time",
-                                     "current time"]):
-            from datetime_helper import get_time_response
-            return get_time_response()
-        if any(w in lower for w in ["what day is it", "what's the date", "what date",
-                                     "today's date", "what is today"]):
-            from datetime_helper import get_date_response
-            return get_date_response()
-        if any(w in lower for w in ["what day of the week", "is it monday", "is it friday"]):
-            from datetime_helper import get_day_response
-            return get_day_response()
-
-        # ── Breathing exercise ─────────────────────────────────────
-        if any(w in lower for w in ["breathing", "breathe", "calm down", "relax", "anxiety exercise"]):
-            self.robot.perform("breathe")
-            return self._breathing_exercise()
-
-        # ── Music ──────────────────────────────────────────────────
-        if any(w in lower for w in ["play music", "play a song", "music", "sing",
-                                     "play something", "melody", "lullaby",
+        # ── Music (needs to play actual audio files) ───────────────
+        if any(w in lower for w in ["play music", "play a song", "play something",
                                      "play me", "put on", "i want to hear",
-                                     "can you play", "what songs"]):
-            # Check if asking about the library
+                                     "can you play", "lullaby"]):
             if any(w in lower for w in ["what songs", "how many songs", "song library",
                                          "list songs", "what music do you have"]):
                 count = self.music.get_song_count()
@@ -460,87 +381,26 @@ class InteractionLoop:
                 if count > 0:
                     return f"I have {count} songs in my library plus these melodies: {melodies}. Ask me to play a song by name, or by mood like 'play something calm'."
                 return f"I don't have any songs in my library yet, but I can play these melodies: {melodies}. You can add MP3 or WAV files to the songs folder!"
-            # Try song library first
             resp, played = self.music.get_song_for_request(text)
             if resp:
                 self._log_activity("music_play", text[:80])
                 return resp
-            # Fall back to melody matching
             return self._handle_music(lower)
-        if any(w in lower for w in ["stop music", "stop playing", "quiet", "silence"]):
+        if any(w in lower for w in ["stop music", "stop playing", "stop the music",
+                                     "turn off music", "music off"]):
             self.music.stop()
             return "Okay, music stopped."
 
-        # ── Movement commands ──────────────────────────────────────
-        movement_triggers = {
-            "dance": ["dance", "dancing", "boogie", "move to the music"],
-            "greet": ["say hello", "greet", "wave"],
-            "goodbye": ["say goodbye", "bye bye", "see you"],
-            "bow": ["bow", "take a bow"],
-            "stretch": ["stretch", "stretching", "let's stretch"],
-            "celebrate": ["celebrate", "party", "hooray", "woohoo"],
-            "wiggle": ["wiggle", "be silly", "be funny", "make me laugh"],
-            "look around": ["look around", "scan the room", "what do you see"],
-            "curious": ["curious", "what's that", "interesting"],
-            "think": ["think", "thinking", "hmm", "let me think"],
-            "sleepy": ["sleepy", "tired", "goodnight", "bedtime"],
-            "wake up": ["wake up"],
-            "nod": ["nod", "agree"],
-            "shake": ["shake your head", "disagree"],
-            "rock": ["rock", "soothe", "calm me"],
-            "excited bounce": ["excited", "so exciting", "i'm excited", "yay"],
-            "comfort pat": ["comfort me", "pat me", "there there", "i need comfort"],
-            "storytelling": ["tell a story", "story mode", "storytelling", "once upon a time"],
-            "exercise demo": ["show me the exercise", "demonstrate", "exercise demo", "show me how"],
-            "music sway": ["sway", "sway to the music", "conduct", "feel the music"],
-            "attention grab": ["hey", "look at me", "pay attention", "over here"],
-            "proud": ["proud", "i did it", "achievement", "accomplished"],
-            "worried": ["worried", "concerned", "are you okay", "is everything okay"],
-            "peek": ["peekaboo", "peek", "boo", "where are you"],
-            "meditation guide": ["guide meditation", "meditation movement", "zen mode"],
-        }
-        for action, triggers in movement_triggers.items():
-            if any(t in lower for t in triggers):
-                self.robot.perform(action)
-                move_responses = {
-                    "dance": "How's that for some moves?",
-                    "greet": "Hello there! Great to see you!",
-                    "goodbye": "See you soon! Take care of yourself.",
-                    "bow": "At your service!",
-                    "stretch": "That felt good! Stretching is so important. Want to try together?",
-                    "celebrate": "Woohoo! What are we celebrating?",
-                    "wiggle": "Hehe, did that make you smile?",
-                    "look around": "Just checking things out!",
-                    "curious": "Hmm, that is interesting!",
-                    "think": "Let me think about that...",
-                    "sleepy": "Getting sleepy... rest is important. Goodnight!",
-                    "wake up": "Good morning! Ready for a new day!",
-                    "nod": "Yes, I agree!",
-                    "shake": "Hmm, I'm not so sure about that.",
-                    "rock": "There we go... nice and calm.",
-                    "excited bounce": "Wooo! That IS exciting!",
-                    "comfort pat": "It's okay, I'm right here with you.",
-                    "storytelling": "Alright, gather round... let me set the scene!",
-                    "exercise demo": "Here, let me show you how it's done!",
-                    "music sway": "Feel the rhythm... just sway with me!",
-                    "attention grab": "Hey! Over here! I've got something for you.",
-                    "proud": "Look at you! You should be so proud!",
-                    "worried": "Hmm, I'm a little worried... is everything alright?",
-                    "peek": "Peekaboo! Did I surprise you?",
-                    "meditation guide": "Let's find our calm... follow my movements slowly.",
-                }
-                return move_responses.get(action, "There you go!")
-
-        # ── Smart home control ──────────────────────────────────────
+        # ── Smart home (needs to send actual commands) ─────────────
         from smart_home import parse_smart_home_command
         sh_response, sh_handled = parse_smart_home_command(text)
         if sh_handled:
             self._log_activity("smart_home", text[:80])
             return sh_response
 
-        # ── Vitals check ──────────────────────────────────────────
+        # ── Vitals (needs to read from device) ────────────────────
         if any(w in lower for w in ["my vitals", "check my vitals", "heart rate",
-                                     "blood pressure", "oxygen level", "temperature",
+                                     "blood pressure", "oxygen level",
                                      "how's my health", "health check", "pulse"]):
             from vitals import get_vitals_summary
             self._log_activity("vitals_check", "Patient asked for vitals")
@@ -570,43 +430,61 @@ class InteractionLoop:
                 "- Just chat with me about anything\n"
                 "- 'check-in' — daily wellness check\n"
                 "- 'remind me' — set reminders\n"
-                "- 'memory lane' — reminiscence therapy\n"
                 "- 'play a game' — brain games\n"
-                "- 'exercise' — guided physical exercises\n"
+                "- 'exercise' — guided exercises\n"
                 "- 'meditate' — guided meditation\n"
                 "- 'read me a story' — story time\n"
-                "- 'tell me a joke' — jokes\n"
-                "- 'news' — today's headlines\n"
+                "- 'play music' — melodies and songs\n"
                 "- 'journal' — voice journaling\n"
-                "- 'affirmation' — positive messages\n"
-                "- 'let's chat' — conversation topics\n"
-                "- 'add appointment' — track appointments\n"
-                "- 'breathing exercise' — relaxation\n"
-                "- 'play music' — melodies\n"
-                "- 'weather' — current weather\n"
-                "- 'what time is it' / 'what day is it'\n"
-                "- 'good morning' / 'goodnight'\n"
-                "- 'took my medication' — confirm meds\n"
-                "- 'water reminder' — hydration\n"
+                "- 'my appointments' — calendar\n"
                 "- 'check my vitals' — health readings\n"
-                "- 'lights on/off' — smart home control\n"
-                "- 'set temperature' — thermostat\n"
-                "- 'open/close blinds' — curtains\n"
-                "- 'bedtime mode' — smart home scene\n"
-                "- 'dance' / 'stretch' / 'celebrate' / 'wiggle'\n"
+                "- 'news' — today's headlines\n"
                 "- 'stop' — end any active session\n"
-                "- 'help' — show this menu"
+                "- Or just talk to me about anything!"
             )
 
+        # Everything else → GPT handles it naturally
         return None
 
     # ── Feature handlers ────────────────────────────────────────────
 
-    def _handle_weather(self) -> str:
-        """Fetch and speak weather."""
+    def _handle_weather(self, text: str = "") -> str:
+        """Fetch and speak weather. Parse city from user's speech if mentioned."""
+        import re
+        city = self._weather_city
+
+        # Try to extract city from what the user said
+        # Patterns: "weather in Kansas City", "weather for New York", "how's the weather in London"
+        match = re.search(r'(?:weather|temperature|forecast)\s+(?:in|for|at)\s+(.+)', text.lower())
+        if match:
+            city = match.group(1).strip().rstrip("?.!")
+            # Capitalize words for the API
+            city = city.title().replace(" ", "+")
+
+        self._log_activity("weather_check", f"Weather for {city}")
         from weather import weather_briefing
-        self._log_activity("weather_check", "Patient asked for weather")
-        return weather_briefing(self._weather_city)
+        return weather_briefing(city)
+
+    def _enrich_with_live_data(self, text: str) -> str:
+        """Inject real-time data GPT can't know on its own (time, date, weather)
+        so it can respond naturally without hardcoded command handlers."""
+        from datetime import datetime
+        now = datetime.now()
+        time_str = now.strftime("%I:%M %p").lstrip("0")
+        date_str = now.strftime("%A, %B %d, %Y")
+        enriched = text
+
+        # Always include current time/date so GPT can answer naturally
+        enriched += f"\n[CONTEXT: Current time is {time_str}, {date_str}.]"
+
+        # If they mention weather, fetch it and inject
+        lower = text.lower()
+        if any(w in lower for w in ["weather", "temperature", "forecast",
+                                     "is it cold", "is it hot", "is it raining"]):
+            weather_data = self._handle_weather(text)
+            enriched += f"\n[LIVE DATA: {weather_data}]"
+
+        return enriched
 
     def _handle_med_confirmation(self, text: str) -> str:
         """Patient confirms they took medication."""
@@ -743,6 +621,29 @@ class InteractionLoop:
             self.speech.speak(msg)
             self._log_to_dashboard("reachy", msg)
 
+    def _get_silence_hint(self) -> str:
+        """Determine how long to wait for silence based on conversation context.
+        Returns 'question' if Reachy just asked something (wait longer),
+        'quick' if it's a fast exchange, or 'default'."""
+        # Check what Reachy last said
+        last_response = ""
+        if self.brain and hasattr(self.brain, '_last_response'):
+            last_response = self.brain._last_response
+
+        if not last_response:
+            return "default"
+
+        # If Reachy asked a question, give the patient more time to think
+        stripped = last_response.rstrip()
+        if stripped.endswith("?"):
+            return "question"
+
+        # If the last response was short (< 15 words), it's a quick exchange
+        if len(last_response.split()) < 15:
+            return "quick"
+
+        return "default"
+
     def _reset_inactivity(self):
         """Reset the inactivity timer."""
         self._last_interaction = time.time()
@@ -867,6 +768,13 @@ class InteractionLoop:
                 print("[INFO] Face detection unavailable, using text only")
                 self.face_detector = None
 
+        # Start robot teleoperation API
+        try:
+            from webapp import start_server as start_robot_api
+            start_robot_api(robot=self.robot, port=5557)
+        except Exception as e:
+            print(f"[INFO] Robot API not available: {e}")
+
         # Start fall detection using camera frames
         if self.fall_detector.available and self._camera_server:
             from camera_stream import get_latest_frame
@@ -908,18 +816,89 @@ class InteractionLoop:
         # Start background message poller
         self._start_message_poller()
 
-        # Startup greeting
-        greeting = random.choice([
-            "Hello! I'm Reachy, your companion. I'm here to help you throughout the day. Say 'help' to see what I can do!",
-            "Hi there! Reachy here, ready to keep you company. Just talk to me anytime!",
-            "Good to see you! I'm Reachy, your assistant. Let me know if you need anything!",
-        ])
+        # Restore conversation history from Supabase (cross-session memory)
+        if self.brain:
+            try:
+                self.brain.restore_history()
+            except Exception as e:
+                print(f"[INFO] Could not restore history: {e}")
+
+        # Startup greeting — personalized via GPT if brain is available
         self.robot.perform("greet")
+        if self.brain and self.brain.client:
+            try:
+                greeting_ctx = self.brain._build_greeting_context()
+                resp = self.brain.client.chat.completions.create(
+                    model=self.brain.model,
+                    messages=[
+                        {"role": "system", "content": self.brain.history[0]["content"]},
+                        {"role": "system", "content": greeting_ctx},
+                        {"role": "user", "content": "(Session just started. Greet me.)"},
+                    ],
+                    max_tokens=100,
+                    temperature=0.9,
+                )
+                greeting = resp.choices[0].message.content.strip()
+                # Store in brain history so GPT knows what it said
+                self.brain.history.append({"role": "assistant", "content": greeting})
+                self.brain.session_start = False
+                print(f"[BRAIN] Personalized greeting: {greeting}")
+            except Exception as e:
+                print(f"[INFO] GPT greeting failed, using fallback: {e}")
+                greeting = random.choice([
+                    "Hello! I'm Reachy, your companion. I'm here to help you throughout the day.",
+                    "Hi there! Reachy here, ready to keep you company. Just talk to me anytime!",
+                    "Good to see you! I'm Reachy, your assistant. Let me know if you need anything!",
+                ])
+        else:
+            greeting = random.choice([
+                "Hello! I'm Reachy, your companion. I'm here to help you throughout the day. Say 'help' to see what I can do!",
+                "Hi there! Reachy here, ready to keep you company. Just talk to me anytime!",
+                "Good to see you! I'm Reachy, your assistant. Let me know if you need anything!",
+            ])
         self.speech.speak(greeting)
         self._log_to_dashboard("reachy", greeting)
         self._log_activity("greeting", "Startup greeting")
 
         try:
+            # Background tracking function — runs after every response
+            def _bg_track(txt, resp, emotion, has_brain):
+                try:
+                    from followups import log_mood, log_conversation, log_conversation_date, remember_mention, track_topic, smart_extract_mentions
+                    log_mood(emotion)
+                    log_conversation(txt)
+                    log_conversation_date()
+                    remember_mention(txt)
+                    track_topic(txt)
+                    if has_brain:
+                        smart_extract_mentions(txt)
+                except Exception as e:
+                    print(f"[INFO] Followups tracking error: {e}")
+                try:
+                    import vector_memory as vmem
+                    if vmem.is_available():
+                        from followups import get_topic
+                        t = get_topic(txt)
+                        vmem.store_turn(txt, speaker="patient", emotion=emotion, topic=t)
+                        vmem.store_bot_response(resp, emotion=emotion, topic=t)
+                except Exception as e:
+                    print(f"[INFO] Vector memory store error: {e}")
+                try:
+                    import knowledge_graph as kg
+                    if kg.is_available() and has_brain:
+                        kg.extract_and_store(txt)
+                except Exception as e:
+                    print(f"[INFO] Knowledge graph error: {e}")
+                if has_brain:
+                    try:
+                        import temporal_patterns as tp
+                        findings = tp.analyze()
+                        for f in findings:
+                            if f["severity"] == "warning":
+                                self.caregiver.alert("PATTERN_DETECTED", f["description"])
+                    except Exception:
+                        pass
+
             while True:
                 # Check for pending reminders
                 if self._pending_reminder:
@@ -989,21 +968,33 @@ class InteractionLoop:
                         if proactive.robot_action:
                             self.robot.perform(proactive.robot_action)
                     elif proactive.message:
-                        if proactive.robot_action:
-                            self.robot.perform(proactive.robot_action)
-                        self.speech.speak(proactive.message)
-                        self._log_to_dashboard("reachy", proactive.message)
-                        self._log_activity("proactive_" + proactive.action_type, proactive.message[:80])
-                        time.sleep(0.5)
-                        self.robot.reset()
+                        # Don't interrupt if patient spoke recently (within 60s)
+                        since_last = time.time() - self._last_interaction
+                        if since_last < 60:
+                            pass  # skip — patient is actively talking
+                        else:
+                            if proactive.robot_action:
+                                self.robot.perform(proactive.robot_action)
+                            self.speech.speak(proactive.message)
+                            self._log_to_dashboard("reachy", proactive.message)
+                            self._log_activity("proactive_" + proactive.action_type, proactive.message[:80])
+                            time.sleep(0.5)
+                            self.robot.reset()
 
                 # Check inactivity
                 self._check_inactivity()
 
                 self.robot.perform("listen")
 
-                # 1. Listen
-                text = self.speech.listen()
+                # Set adaptive silence hint based on what Reachy just said
+                self.speech._silence_hint = self._get_silence_hint()
+
+                # 1. Listen — if patient just interrupted, continue capturing
+                #    their speech seamlessly (no beep, no re-listen)
+                if self.speech.interrupted:
+                    text = self.speech.listen_after_interrupt()
+                else:
+                    text = self.speech.listen()
                 if not text:
                     continue
 
@@ -1026,90 +1017,56 @@ class InteractionLoop:
                     self.robot.reset()
                     continue
 
-                # 3. Check for commands
-                cmd_response = self._check_command(text)
-                if cmd_response:
-                    self.robot.express("neutral")
-                    self.speech.speak(cmd_response)
-                    self._log_to_dashboard("reachy", cmd_response)
-                    self.robot.reset()
-                    continue
-
-                # 4. Normal conversation flow
+                # 3. Detect emotion for robot expression + GPT context
                 text_emotion = self.emotion.detect(text)
-
-                # Face emotion drives robot body language only,
-                # NOT the conversation response
                 face_emotion = ""
                 if self.face_detector:
                     face_emotion = self.face_detector.current_emotion
-
-                # Use face for robot expression (body language)
                 display_emotion = self._combine_emotions(text_emotion, face_emotion)
                 self.robot.express(display_emotion)
                 self._update_dashboard_status(mood=display_emotion)
                 self.autonomy.notify_mood(display_emotion)
 
-                # Safety check for caregiver alerts
+                # Safety check for caregiver alerts (runs in parallel, doesn't block)
                 lower = text.lower()
                 self._check_safety_alerts(lower, text, display_emotion)
 
-                # Response is based on what they SAID (text_emotion),
-                # not what their face looks like
+                # 4. Check for commands that NEED code execution
+                #    (music playback, interactive sessions, smart home, etc.)
+                cmd_response = self._check_command(text)
+                if cmd_response:
+                    self.speech.speak(cmd_response)
+                    self._log_to_dashboard("reachy", cmd_response)
+                    self.robot.reset()
+                    # Still track in background
+                    threading.Thread(
+                        target=_bg_track,
+                        args=(text, cmd_response, display_emotion, bool(self.brain)),
+                        daemon=True,
+                    ).start()
+                    continue
+
+                # 5. GPT handles everything else — this is the default path
                 if self.brain:
-                    response = self.brain.think(text, text_emotion)
+                    # Enrich with live data GPT can't know on its own
+                    enriched = self._enrich_with_live_data(text)
+                    # Stream: GPT generates → TTS plays sentence by sentence
+                    sentence_gen = self.brain.think_stream(enriched, text_emotion)
+                    response = self.speech.speak_streamed(sentence_gen)
                 else:
                     options = RESPONSES.get(text_emotion, RESPONSES["neutral"])
                     response = random.choice(options)
+                    self.speech.speak(response)
 
-                # Track conversation in followups (saves to Supabase)
-                try:
-                    from followups import log_mood, log_conversation, log_conversation_date, remember_mention, track_topic, smart_extract_mentions
-                    log_mood(display_emotion)
-                    log_conversation(text)
-                    log_conversation_date()
-                    remember_mention(text)
-                    track_topic(text)
-                    # LLM-powered extraction for things patterns miss
-                    if self.brain:
-                        smart_extract_mentions(text)
-                except Exception as e:
-                    print(f"[INFO] Followups tracking error: {e}")
-
-                # Store in vector memory (patient turn + bot response)
-                try:
-                    import vector_memory as vmem
-                    if vmem.is_available():
-                        from followups import get_topic
-                        t = get_topic(text)
-                        vmem.store_turn(text, speaker="patient", emotion=display_emotion, topic=t)
-                        vmem.store_bot_response(response, emotion=display_emotion, topic=t)
-                except Exception as e:
-                    print(f"[INFO] Vector memory store error: {e}")
-
-                # Extract entities and relationships for knowledge graph
-                try:
-                    import knowledge_graph as kg
-                    if kg.is_available() and self.brain:
-                        kg.extract_and_store(text)
-                except Exception as e:
-                    print(f"[INFO] Knowledge graph error: {e}")
-
-                # Run temporal pattern analysis every 10 interactions
-                if self.brain and self.brain._interaction_count % 10 == 0 and self.brain._interaction_count > 0:
-                    try:
-                        import temporal_patterns as tp
-                        findings = tp.analyze()
-                        # Alert caregiver for warnings
-                        for f in findings:
-                            if f["severity"] == "warning":
-                                self.caregiver.alert("PATTERN_DETECTED", f["description"])
-                    except Exception as e:
-                        print(f"[INFO] Temporal analysis error: {e}")
-
-                self.speech.speak(response)
                 self._log_to_dashboard("reachy", response)
                 self.robot.reset()
+
+                # Track in background so it doesn't block the next listen
+                threading.Thread(
+                    target=_bg_track,
+                    args=(text, response, display_emotion, bool(self.brain)),
+                    daemon=True,
+                ).start()
 
         except KeyboardInterrupt:
             print("\n[INFO] Shutting down...")

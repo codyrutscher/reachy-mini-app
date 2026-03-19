@@ -1,5 +1,8 @@
 """Daily affirmations and motivational quotes — Reachy shares
-uplifting messages to brighten the patient's day."""
+uplifting messages to brighten the patient's day.
+
+Context-aware: picks affirmations based on the patient's recent mood
+from Supabase when available, falls back to random otherwise."""
 
 import random
 from datetime import datetime
@@ -44,6 +47,61 @@ AFFIRMATIONS = [
     "I am not walking this road alone.",
 ]
 
+# ── Mood-specific affirmations ──────────────────────────────────
+
+_MOOD_AFFIRMATIONS = {
+    "sadness": [
+        "It's okay to feel sad. Your feelings are valid and they will pass.",
+        "Even on hard days, you are still worthy of love and kindness.",
+        "Tears are not weakness — they show how deeply you feel.",
+        "You don't have to be strong all the time. I'm here with you.",
+        "Gentle days are still good days. Be kind to yourself.",
+        "The sun always comes back, even after the longest night.",
+        "You are held and cared for, even when it doesn't feel that way.",
+    ],
+    "fear": [
+        "You are safe right now, in this moment. Take a deep breath.",
+        "Courage isn't the absence of fear — it's moving forward anyway.",
+        "Whatever is worrying you, you don't have to face it alone.",
+        "One breath at a time. You've got this.",
+        "Fear is just a feeling, not a fact. You are okay.",
+        "You've been through hard things before and made it through.",
+    ],
+    "anger": [
+        "Your frustration makes sense. It's okay to feel this way.",
+        "You have every right to your feelings. Let's take a breath together.",
+        "Even when things are unfair, you handle them with grace.",
+        "It's okay to be upset. What matters is that you're still here.",
+        "Your feelings are heard. You don't have to carry this alone.",
+    ],
+    "joy": [
+        "Your happiness is contagious — keep shining!",
+        "What a wonderful mood you're in! You deserve every bit of it.",
+        "Joy looks so good on you. Let's keep this energy going!",
+        "You're glowing today. The world is brighter because of you.",
+        "Celebrate this feeling — you've earned it!",
+        "Your laughter is the best sound. Never stop.",
+    ],
+    "neutral": AFFIRMATIONS,  # fall back to the general pool
+}
+
+def _get_recent_dominant_mood(patient_id: str = "default") -> str:
+    """Query the last few moods from Supabase and return the dominant one."""
+    try:
+        import db_supabase as _db
+        if not _db.is_available():
+            return "neutral"
+        moods = _db.get_moods(patient_id, limit=5)
+        if not moods:
+            return "neutral"
+        counts = {}
+        for m in moods:
+            mood = m.get("mood", "neutral")
+            counts[mood] = counts.get(mood, 0) + 1
+        return max(counts, key=counts.get)
+    except Exception:
+        return "neutral"
+
 MOTIVATIONAL = [
     "The secret of getting ahead is getting started.",
     "Believe you can and you're halfway there.",
@@ -82,19 +140,37 @@ def evening_reflection() -> str:
     """Get a calming evening reflection."""
     return random.choice(EVENING_REFLECTIONS)
 
-def get_daily_affirmation() -> str:
-    """Get today's affirmation (same one all day)."""
+def get_daily_affirmation(patient_id: str = "default") -> str:
+    """Get today's affirmation (same one all day), mood-aware."""
     global _daily_affirmation, _daily_date
     today = datetime.now().strftime("%Y-%m-%d")
     if _daily_date != today:
         _daily_date = today
-        _daily_affirmation = random.choice(AFFIRMATIONS)
+        mood = _get_recent_dominant_mood(patient_id)
+        pool = _MOOD_AFFIRMATIONS.get(mood, AFFIRMATIONS)
+        _daily_affirmation = random.choice(pool)
     return _daily_affirmation
 
 
-def get_affirmation() -> str:
-    """Get a random affirmation."""
-    return random.choice(AFFIRMATIONS)
+def get_affirmation(patient_id: str = "default") -> str:
+    """Get a mood-aware random affirmation."""
+    mood = _get_recent_dominant_mood(patient_id)
+    pool = _MOOD_AFFIRMATIONS.get(mood, AFFIRMATIONS)
+    return random.choice(pool)
+
+
+def get_contextual_affirmation(patient_id: str = "default") -> str:
+    """Get an affirmation with a mood-aware intro line."""
+    mood = _get_recent_dominant_mood(patient_id)
+    affirmation = random.choice(_MOOD_AFFIRMATIONS.get(mood, AFFIRMATIONS))
+    intros = {
+        "sadness": "I know things feel heavy right now. Here's something for you: ",
+        "fear": "Take a breath with me. I want you to hear this: ",
+        "anger": "I hear you. Before we go on, remember this: ",
+        "joy": "You're in such a great mood! Here's one to match: ",
+    }
+    intro = intros.get(mood, "Here's something I want you to hear: ")
+    return intro + affirmation
 
 
 def get_motivation() -> str:
@@ -107,9 +183,9 @@ def get_gratitude_prompt() -> str:
     return random.choice(GRATITUDE_PROMPTS)
 
 
-def morning_affirmation() -> str:
-    """Full morning affirmation with greeting."""
-    aff = get_daily_affirmation()
+def morning_affirmation(patient_id: str = "default") -> str:
+    """Full morning affirmation with greeting, mood-aware."""
+    aff = get_daily_affirmation(patient_id)
     return f"Here's your affirmation for today: {aff}"
 
 

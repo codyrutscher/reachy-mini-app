@@ -1,0 +1,267 @@
+{% extends "_base.html" %}
+{% block title %}Incident Reports — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .incidents { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  .inc-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+  .inc-form { position: sticky; top: 80px; }
+  .form-group { margin-bottom: 12px; }
+  .form-group label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card2); color: var(--text); font-size: 13px; font-family: inherit; }
+  .form-group textarea { resize: vertical; min-height: 70px; }
+  .form-group select { appearance: auto; }
+  .inc-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 10px; border-left: 4px solid var(--muted); transition: all 0.2s; }
+  .inc-card.sev-low { border-left-color: var(--green); }
+  .inc-card.sev-medium { border-left-color: var(--yellow, #eab308); }
+  .inc-card.sev-high { border-left-color: var(--orange, #f97316); }
+  .inc-card.sev-critical { border-left-color: var(--red); }
+  .inc-card.resolved { opacity: 0.6; }
+  .inc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
+  .inc-type { font-size: 13px; font-weight: 600; text-transform: capitalize; }
+  .inc-badges { display: flex; gap: 4px; }
+  .inc-badge { padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 600; }
+  .inc-badge.sev-low { background: rgba(34,197,94,0.15); color: var(--green); }
+  .inc-badge.sev-medium { background: rgba(234,179,8,0.15); color: #ca8a04; }
+  .inc-badge.sev-high { background: rgba(249,115,22,0.15); color: #ea580c; }
+  .inc-badge.sev-critical { background: rgba(239,68,68,0.15); color: var(--red); }
+  .inc-badge.resolved { background: rgba(34,197,94,0.15); color: var(--green); }
+  .inc-badge.open { background: rgba(239,68,68,0.1); color: var(--red); }
+  .inc-desc { font-size: 13px; line-height: 1.5; margin-bottom: 6px; }
+  .inc-meta { font-size: 11px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+  .inc-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .inc-actions button { padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--card2); color: var(--text); transition: all 0.15s; }
+  .inc-actions button:hover { border-color: var(--blue); }
+  .inc-actions .resolve-btn:hover { border-color: var(--green); color: var(--green); }
+  .inc-actions .delete-btn:hover { border-color: var(--red); color: var(--red); }
+  .inc-empty { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+  .inc-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-btn { padding: 5px 12px; border-radius: 16px; font-size: 11px; font-weight: 500; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--muted); transition: all 0.15s; }
+  .filter-btn.active { background: var(--blue); border-color: var(--blue); color: white; }
+  .inc-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .stat-box { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; text-align: center; }
+  .stat-num { font-size: 20px; font-weight: 700; }
+  .stat-label { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  @media (max-width: 800px) { .inc-grid { grid-template-columns: 1fr; } .inc-form { position: static; } .inc-stats { grid-template-columns: repeat(2, 1fr); } }
+</style>
+{% endblock %}
+{% block body %}
+<div class="incidents">
+  <div class="page-header">
+    <div>
+      <div class="page-title">&#x26A0;&#xFE0F; Incident Reports</div>
+      <div class="page-subtitle">Log and track safety incidents, falls, and clinical events</div>
+    </div>
+  </div>
+
+  <div class="inc-stats" id="stats"></div>
+
+  <div class="inc-grid">
+    <div>
+      <div class="card inc-form">
+        <div style="font-size:14px;font-weight:600;margin-bottom:12px;">&#x1F4DD; New Incident</div>
+        <form id="incForm" onsubmit="return submitIncident(event)">
+          <div class="form-group">
+            <label>Type</label>
+            <select id="fType" required>
+              <option value="fall">Fall</option>
+              <option value="wandering">Wandering</option>
+              <option value="agitation">Agitation</option>
+              <option value="medication_error">Medication Error</option>
+              <option value="injury">Injury</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Severity</label>
+            <select id="fSeverity">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Description *</label>
+            <textarea id="fDesc" placeholder="What happened?" required></textarea>
+          </div>
+          <div class="form-group">
+            <label>Actions Taken</label>
+            <textarea id="fActions" placeholder="What was done in response?" style="min-height:50px;"></textarea>
+          </div>
+          <div class="form-group">
+            <label>Patient ID</label>
+            <input type="text" id="fPatient" value="default" placeholder="default">
+          </div>
+          <button type="submit" class="btn" style="width:100%;">Submit Report</button>
+        </form>
+      </div>
+    </div>
+
+    <div>
+      <div class="inc-filters">
+        <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+        <button class="filter-btn" onclick="setFilter('open', this)">Open</button>
+        <button class="filter-btn" onclick="setFilter('resolved', this)">Resolved</button>
+        <span style="width:1px;background:var(--border);margin:0 4px;"></span>
+        <button class="filter-btn" onclick="setFilter('critical', this)">Critical</button>
+        <button class="filter-btn" onclick="setFilter('high', this)">High</button>
+        <button class="filter-btn" onclick="setFilter('fall', this)">Falls</button>
+        <button class="filter-btn" onclick="setFilter('wandering', this)">Wandering</button>
+      </div>
+      <div id="incList"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var incidents = [];
+var currentFilter = 'all';
+
+function loadIncidents() {
+  fetch('/api/incidents').then(function(r) { return r.json(); }).then(function(data) {
+    incidents = data;
+    renderStats();
+    renderList();
+  }).catch(function() {
+    document.getElementById('incList').innerHTML = '<div class="inc-empty">Failed to load incidents</div>';
+  });
+}
+
+function renderStats() {
+  var total = incidents.length;
+  var open = incidents.filter(function(i) { return !i.resolved; }).length;
+  var critical = incidents.filter(function(i) { return i.severity === 'critical' && !i.resolved; }).length;
+  var today = new Date().toISOString().slice(0, 10);
+  var todayCount = incidents.filter(function(i) { return (i.created_at || '').slice(0, 10) === today; }).length;
+  document.getElementById('stats').innerHTML =
+    '<div class="stat-box"><div class="stat-num">' + total + '</div><div class="stat-label">Total</div></div>' +
+    '<div class="stat-box"><div class="stat-num" style="color:var(--red);">' + open + '</div><div class="stat-label">Open</div></div>' +
+    '<div class="stat-box"><div class="stat-num" style="color:var(--red);">' + critical + '</div><div class="stat-label">Critical</div></div>' +
+    '<div class="stat-box"><div class="stat-num" style="color:var(--blue);">' + todayCount + '</div><div class="stat-label">Today</div></div>';
+}
+
+function renderList() {
+  var filtered = incidents.filter(function(i) {
+    if (currentFilter === 'all') return true;
+    if (currentFilter === 'open') return !i.resolved;
+    if (currentFilter === 'resolved') return i.resolved;
+    if (currentFilter === 'critical' || currentFilter === 'high') return i.severity === currentFilter;
+    if (currentFilter === 'fall' || currentFilter === 'wandering') return i.incident_type === currentFilter;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    document.getElementById('incList').innerHTML = '<div class="inc-empty">No incidents found</div>';
+    return;
+  }
+
+  var html = '';
+  for (var idx = 0; idx < filtered.length; idx++) {
+    var i = filtered[idx];
+    var resolved = i.resolved === true || i.resolved === 1;
+    var typeLabel = (i.incident_type || '').replace('_', ' ');
+    var typeEmoji = {fall:'🤕', wandering:'🚶', agitation:'😤', medication_error:'💊', injury:'🩹', other:'📋'}[i.incident_type] || '📋';
+
+    html += '<div class="inc-card sev-' + i.severity + (resolved ? ' resolved' : '') + '">';
+    html += '<div class="inc-header">';
+    html += '<div class="inc-type">' + typeEmoji + ' ' + typeLabel + '</div>';
+    html += '<div class="inc-badges">';
+    html += '<span class="inc-badge sev-' + i.severity + '">' + i.severity + '</span>';
+    html += '<span class="inc-badge ' + (resolved ? 'resolved' : 'open') + '">' + (resolved ? '✓ Resolved' : 'Open') + '</span>';
+    html += '</div></div>';
+    html += '<div class="inc-desc">' + escapeHtml(i.description) + '</div>';
+    if (i.actions_taken) {
+      html += '<div class="inc-desc" style="color:var(--muted);font-style:italic;">Actions: ' + escapeHtml(i.actions_taken) + '</div>';
+    }
+    html += '<div class="inc-meta">';
+    html += '<span>By: ' + escapeHtml(i.reported_by || 'unknown') + '</span>';
+    html += '<span>Patient: ' + escapeHtml(i.patient_id || 'default') + '</span>';
+    html += '<span>' + formatTime(i.created_at) + '</span>';
+    if (resolved && i.resolved_at) html += '<span>Resolved: ' + formatTime(i.resolved_at) + '</span>';
+    html += '</div>';
+    if (!resolved) {
+      html += '<div class="inc-actions">';
+      html += '<button class="resolve-btn" onclick="resolveInc(' + i.id + ')">✓ Resolve</button>';
+      html += '<button class="delete-btn" onclick="deleteInc(' + i.id + ')">✕ Delete</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  document.getElementById('incList').innerHTML = html;
+}
+
+function setFilter(f, btn) {
+  currentFilter = f;
+  var btns = document.querySelectorAll('.filter-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].className = 'filter-btn';
+  btn.className = 'filter-btn active';
+  renderList();
+}
+
+function submitIncident(e) {
+  e.preventDefault();
+  var data = {
+    incident_type: document.getElementById('fType').value,
+    severity: document.getElementById('fSeverity').value,
+    description: document.getElementById('fDesc').value,
+    actions_taken: document.getElementById('fActions').value,
+    patient_id: document.getElementById('fPatient').value || 'default'
+  };
+  fetch('/api/incidents', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('Incident reported', 'success');
+    document.getElementById('fDesc').value = '';
+    document.getElementById('fActions').value = '';
+    loadIncidents();
+  }).catch(function() { showToast('Failed to submit', 'error'); });
+  return false;
+}
+
+function resolveInc(id) {
+  fetch('/api/incidents/' + id + '/resolve', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(function(r) { return r.json(); }).then(function() {
+    showToast('Incident resolved', 'success');
+    loadIncidents();
+  }).catch(function() { showToast('Failed', 'error'); });
+}
+
+function deleteInc(id) {
+  if (!confirm('Delete this incident report?')) return;
+  fetch('/api/incidents/' + id, { method: 'DELETE' })
+    .then(function(r) { return r.json(); })
+    .then(function() { showToast('Deleted', 'info'); loadIncidents(); })
+    .catch(function() { showToast('Failed', 'error'); });
+}
+
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function formatTime(t) {
+  if (!t) return '';
+  try {
+    var d = new Date(t);
+    if (isNaN(d.getTime())) return t;
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  } catch(e) { return t; }
+}
+
+loadIncidents();
+</script>
+{% endblock %}

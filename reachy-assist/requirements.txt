@@ -3,10 +3,18 @@ openai-whisper
 pyttsx3
 sounddevice
 numpy
+soundfile
 opencv-python
 facenet-pytorch
 hsemotion-onnx
 openai
+
+# Realtime API (full-duplex voice)
+websockets
+
+# Robot teleoperation API
+flask
+flask-cors
 
 # RAG memory
 # OpenAI embeddings preferred; hash-based fallback if no API key

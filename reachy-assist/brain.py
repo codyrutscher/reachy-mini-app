@@ -69,7 +69,7 @@ class Brain:
         if backend == "openai":
             from openai import OpenAI
             self.client = OpenAI()
-            self.model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
             print(f"[BRAIN] Using OpenAI ({self.model})")
         elif backend == "ollama":
             from openai import OpenAI
@@ -103,55 +103,89 @@ class Brain:
 
         # Track mood and extract facts
         self._track_mood(emotion, user_text)
-
-        # Track conversation topic
         self._track_topic(lower)
 
-        # Check for loneliness patterns
-        loneliness = self._check_loneliness(lower)
-
-        # Check for confusion patterns
-        confusion = self._check_confusion(lower)
-
-        # Build context for the LLM (includes RAG memories)
-        context = self._build_context(emotion, loneliness, confusion, user_text)
-
         if self.client is None:
+            loneliness = self._check_loneliness(lower)
+            confusion = self._check_confusion(lower)
             response = self._smart_fallback(emotion, loneliness, confusion, user_text)
             self._store_rag_turn(user_text, response, emotion)
             self._last_response = response
             return response
 
-        # Augment the user message with emotional + situational context
-        augmented = f"[{context}] {user_text}"
-        self.history.append({"role": "user", "content": augmented})
+        # Strip [CONTEXT:...] and [LIVE DATA:...] from user text for display,
+        # but keep them in the message to GPT
+        clean_text = re.sub(r'\n?\[(?:CONTEXT|LIVE DATA):.*?\]', '', user_text).strip()
 
-        # Session start: warm greeting with past-session awareness
+        # Build a lean context — just the essentials, not a wall of instructions
+        context_parts = []
+        if emotion != "neutral":
+            context_parts.append(f"emotion: {emotion}")
+        if self.user_name:
+            context_parts.append(f"name: {self.user_name}")
+
+        # Add key memories only (not everything)
+        if self.user_facts:
+            context_parts.append(f"known facts: {'; '.join(self.user_facts[-5:])}")
+
+        # RAG memory — past session context
+        if self._rag_enabled and clean_text:
+            try:
+                import memory as mem
+                rag_context = mem.build_memory_context(clean_text, self._patient_id)
+                if rag_context:
+                    context_parts.append(f"past sessions: {rag_context}")
+            except Exception:
+                pass
+
+        # Vector memory — semantic recall
+        try:
+            import vector_memory as vmem
+            if vmem.is_available() and clean_text:
+                vec_context = vmem.build_context(clean_text, self._patient_id)
+                if vec_context:
+                    context_parts.append(vec_context)
+        except Exception:
+            pass
+
+        # Knowledge graph
+        try:
+            import knowledge_graph as kg
+            if kg.is_available():
+                kg_context = kg.build_context(self._patient_id)
+                if kg_context:
+                    context_parts.append(kg_context)
+        except Exception:
+            pass
+
+        # Supabase cross-session data (cached, refreshed every 5 turns)
+        self._refresh_supabase_cache()
+        supa_ctx = self._get_supabase_context_string()
+        if supa_ctx:
+            context_parts.append(supa_ctx)
+
+        # Build the message — context as a system message, user text clean
+        if context_parts:
+            ctx_msg = "Context about this person: " + "; ".join(context_parts)
+            # Only inject context system message every 3 turns to keep it clean
+            if self._interaction_count % 3 == 0 or self._interaction_count < 3:
+                self.history.append({"role": "system", "content": ctx_msg})
+
+        self.history.append({"role": "user", "content": user_text})
+
+        # Session start greeting
         if self.session_start:
             greeting_ctx = self._build_greeting_context()
-            self.history.append({"role": "system", "content": greeting_ctx})
+            self.history.insert(-1, {"role": "system", "content": greeting_ctx})
             self.session_start = False
 
-        # Anti-repetition: nudge the LLM if it's been repeating itself
-        if self._last_response and self._interaction_count > 2:
-            self.history.append({"role": "system", "content":
-                "IMPORTANT: Vary your response style. Don't repeat phrases from your previous reply. "
-                "Be natural and conversational -- respond directly to what they said."})
-
         try:
-            # Adjust temperature based on emotional context
-            temp = 0.75
-            if emotion in ("sadness", "fear"):
-                temp = 0.6  # more focused/careful when user is distressed
-            elif emotion == "joy":
-                temp = 0.85  # more creative/playful when happy
-
             resp = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.history,
-                max_tokens=150,  # shorter = more natural conversation
-                temperature=temp,
-                presence_penalty=0.6,  # discourage repetition
+                max_tokens=300,
+                temperature=0.8,
+                presence_penalty=0.5,
                 frequency_penalty=0.3,
             )
             reply = resp.choices[0].message.content.strip()
@@ -161,21 +195,169 @@ class Brain:
 
             self.history.append({"role": "assistant", "content": reply})
 
-            # Keep history manageable (system + last 30 exchanges)
-            if len(self.history) > 61:
-                self.history = [self.history[0]] + self.history[-60:]
+            # Keep history manageable (system + last 40 exchanges)
+            if len(self.history) > 81:
+                self.history = [self.history[0]] + self.history[-80:]
 
-            # Store this turn in RAG memory
-            self._store_rag_turn(user_text, reply, emotion)
+            self._store_rag_turn(clean_text, reply, emotion)
             self._last_response = reply
-
             return reply
         except Exception as e:
             print(f"[BRAIN] LLM error: {e}")
+            loneliness = self._check_loneliness(lower)
+            confusion = self._check_confusion(lower)
+            response = self._smart_fallback(emotion, loneliness, confusion, user_text)
+            self._store_rag_turn(clean_text, response, emotion)
+            self._last_response = response
+            return response
+
+    def think_stream(self, user_text: str, emotion: str):
+        """Stream GPT response, yielding complete sentences as they arrive.
+        Falls back to regular think() if streaming isn't available."""
+        import time as _time
+        if not self._session_start_time:
+            self._session_start_time = _time.time()
+
+        lower = user_text.lower()
+
+        # Safety check
+        safety_flag = self._check_safety(lower)
+        if safety_flag == "crisis":
+            self._track_mood(emotion, user_text)
+            yield SAFETY_RESPONSE
+            return
+        if safety_flag == "emergency":
+            self._track_mood(emotion, user_text)
+            yield EMERGENCY_RESPONSE
+            return
+
+        self._track_mood(emotion, user_text)
+        self._track_topic(lower)
+
+        if self.client is None:
+            loneliness = self._check_loneliness(lower)
+            confusion = self._check_confusion(lower)
             response = self._smart_fallback(emotion, loneliness, confusion, user_text)
             self._store_rag_turn(user_text, response, emotion)
             self._last_response = response
-            return response
+            yield response
+            return
+
+        clean_text = re.sub(r'\n?\[(?:CONTEXT|LIVE DATA):.*?\]', '', user_text).strip()
+
+        # Build context (same as think())
+        context_parts = []
+        if emotion != "neutral":
+            context_parts.append(f"emotion: {emotion}")
+        if self.user_name:
+            context_parts.append(f"name: {self.user_name}")
+        if self.user_facts:
+            context_parts.append(f"known facts: {'; '.join(self.user_facts[-5:])}")
+        if self._rag_enabled and clean_text:
+            try:
+                import memory as mem
+                rag_context = mem.build_memory_context(clean_text, self._patient_id)
+                if rag_context:
+                    context_parts.append(f"past sessions: {rag_context}")
+            except Exception:
+                pass
+        try:
+            import vector_memory as vmem
+            if vmem.is_available() and clean_text:
+                vec_context = vmem.build_context(clean_text, self._patient_id)
+                if vec_context:
+                    context_parts.append(vec_context)
+        except Exception:
+            pass
+        try:
+            import knowledge_graph as kg
+            if kg.is_available():
+                kg_context = kg.build_context(self._patient_id)
+                if kg_context:
+                    context_parts.append(kg_context)
+        except Exception:
+            pass
+        self._refresh_supabase_cache()
+        supa_ctx = self._get_supabase_context_string()
+        if supa_ctx:
+            context_parts.append(supa_ctx)
+
+        if context_parts:
+            ctx_msg = "Context about this person: " + "; ".join(context_parts)
+            if self._interaction_count % 3 == 0 or self._interaction_count < 3:
+                self.history.append({"role": "system", "content": ctx_msg})
+
+        self.history.append({"role": "user", "content": user_text})
+
+        if self.session_start:
+            greeting_ctx = self._build_greeting_context()
+            self.history.insert(-1, {"role": "system", "content": greeting_ctx})
+            self.session_start = False
+
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=self.history,
+                max_tokens=300,
+                temperature=0.8,
+                presence_penalty=0.5,
+                frequency_penalty=0.3,
+                stream=True,
+            )
+
+            full_reply = ""
+            sentence_buffer = ""
+
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    token = delta.content
+                    full_reply += token
+                    sentence_buffer += token
+
+                    # Yield complete sentences as they form
+                    # Split on sentence-ending punctuation followed by space or end
+                    while True:
+                        # Find the earliest sentence boundary
+                        best = -1
+                        for sep in [". ", "! ", "? ", ".\n", "!\n", "?\n"]:
+                            idx = sentence_buffer.find(sep)
+                            if idx != -1 and (best == -1 or idx < best):
+                                best = idx
+                                best_len = len(sep)
+                        if best == -1:
+                            break
+                        sentence = sentence_buffer[:best + best_len].strip()
+                        sentence_buffer = sentence_buffer[best + best_len:]
+                        if sentence:
+                            # Clean context markers
+                            sentence = re.sub(r'\[.*?\]\s*', '', sentence).strip()
+                            if sentence:
+                                yield sentence
+
+            # Yield any remaining text
+            remaining = sentence_buffer.strip()
+            if remaining:
+                remaining = re.sub(r'\[.*?\]\s*', '', remaining).strip()
+                if remaining:
+                    yield remaining
+
+            # Clean full reply and store
+            full_reply = re.sub(r'\[.*?\]\s*', '', full_reply).strip() if full_reply.startswith('[') else full_reply.strip()
+            self.history.append({"role": "assistant", "content": full_reply})
+            if len(self.history) > 81:
+                self.history = [self.history[0]] + self.history[-80:]
+            self._store_rag_turn(clean_text, full_reply, emotion)
+            self._last_response = full_reply
+
+        except Exception as e:
+            print(f"[BRAIN] Stream error: {e}")
+            loneliness = self._check_loneliness(lower)
+            confusion = self._check_confusion(lower)
+            response = self._smart_fallback(emotion, loneliness, confusion, user_text)
+            self._store_rag_turn(clean_text, response, emotion)
+            self._last_response = response
+            yield response
 
     def _store_rag_turn(self, user_text: str, response: str, emotion: str):
         """Store conversation turn in RAG memory (background, non-blocking)."""
@@ -186,6 +368,60 @@ class Brain:
             mem.process_conversation_turn(user_text, response, emotion, self._patient_id)
         except Exception as e:
             print(f"[BRAIN] RAG store error: {e}")
+
+    def _refresh_supabase_cache(self):
+        """Refresh Supabase context cache every 5 interactions."""
+        if not hasattr(self, '_supa_cache'):
+            self._supa_cache = {}
+            self._supa_cache_turn = -1
+        if self._interaction_count - self._supa_cache_turn >= 5 or self._supa_cache_turn < 0:
+            self._supa_cache_turn = self._interaction_count
+            try:
+                import db_supabase as _db
+                if _db.is_available():
+                    self._supa_cache = {
+                        'profile': _db.get_profile(self._patient_id),
+                        'facts': _db.get_facts(self._patient_id),
+                        'mentions': _db.get_mentions(self._patient_id),
+                        'streak': _db.get_streak(self._patient_id),
+                        'sessions': _db.get_session_summaries(self._patient_id, limit=1),
+                    }
+                    # Learn name from profile
+                    profile = self._supa_cache.get('profile', {})
+                    pname = (profile.get("preferred_name") or profile.get("name", "")).strip()
+                    if pname and not self.user_name:
+                        self.user_name = pname
+                    # Merge saved facts
+                    for f in self._supa_cache.get('facts', []):
+                        if f.get("fact") and f["fact"] not in self.user_facts:
+                            self.user_facts.append(f["fact"])
+            except Exception as e:
+                print(f"[BRAIN] Supabase cache error: {e}")
+
+    def _get_supabase_context_string(self) -> str:
+        """Build a concise context string from cached Supabase data."""
+        parts = []
+        sc = getattr(self, '_supa_cache', {})
+        if not sc:
+            return ""
+        try:
+            mentions = sc.get('mentions', {})
+            if mentions:
+                for cat, items in mentions.items():
+                    if items:
+                        parts.append(f"{cat}: {', '.join(items[:3])}")
+            streak = sc.get('streak', 0)
+            if streak >= 2:
+                parts.append(f"chatted {streak} days in a row")
+            sessions = sc.get('sessions', [])
+            if sessions:
+                last = sessions[0]
+                topics = last.get("topics_discussed", [])
+                if topics:
+                    parts.append(f"last time talked about: {', '.join(topics[:3])}")
+        except Exception:
+            pass
+        return "; ".join(parts) if parts else ""
 
     def _build_greeting_context(self) -> str:
         """Build a context-aware greeting prompt for the start of a session."""
@@ -306,13 +542,36 @@ class Brain:
         # Try to learn the user's name
         lower = text.lower()
         if not self.user_name:
-            for prefix in ["my name is ", "i'm ", "i am ", "call me "]:
+            # Only match explicit name introductions, not "I'm bored/tired/hungry/etc."
+            _not_names = {
+                "bored", "tired", "hungry", "thirsty", "scared", "worried",
+                "happy", "sad", "angry", "fine", "good", "great", "okay", "ok",
+                "sick", "cold", "hot", "lonely", "confused", "lost", "sorry",
+                "excited", "nervous", "anxious", "sleepy", "awake", "back",
+                "here", "home", "ready", "done", "not", "so", "very", "really",
+                "just", "feeling", "doing", "going", "looking", "trying",
+            }
+            for prefix in ["my name is ", "call me "]:
                 if prefix in lower:
                     idx = lower.index(prefix) + len(prefix)
                     name = text[idx:].split()[0].strip(".,!?")
-                    if len(name) > 1 and name.isalpha():
+                    if (len(name) > 1 and name.isalpha()
+                            and name.lower() not in _not_names):
                         self.user_name = name.capitalize()
                         print(f"[BRAIN] Learned user name: {self.user_name}")
+            # "I'm X" only if followed by nothing or a period (not "I'm bored today")
+            if not self.user_name and "i'm " in lower:
+                idx = lower.index("i'm ") + 4
+                rest = text[idx:].strip()
+                name = rest.split()[0].strip(".,!?") if rest else ""
+                words_after = rest.split()
+                # Only accept as name if it's the only word or followed by punctuation
+                if (len(name) > 1 and name.isalpha()
+                        and name.lower() not in _not_names
+                        and name[0].isupper()
+                        and len(words_after) <= 2):
+                    self.user_name = name
+                    print(f"[BRAIN] Learned user name: {self.user_name}")
 
         # Extract personal facts from conversation
         self._extract_facts(text)
@@ -473,66 +732,78 @@ class Brain:
             print(f"[BRAIN] Temporal patterns error: {e}")
 
         # Supabase: enrich context with persistent cross-session data
+        # Use cached data — refreshed in background every 5 interactions
+        if not hasattr(self, '_supa_cache'):
+            self._supa_cache = {}
+            self._supa_cache_turn = 0
+        if self._interaction_count == 0 or self._interaction_count - self._supa_cache_turn >= 5:
+            self._supa_cache_turn = self._interaction_count
+            try:
+                import db_supabase as _db
+                if _db.is_available():
+                    self._supa_cache = {
+                        'profile': _db.get_profile(self._patient_id),
+                        'facts': _db.get_facts(self._patient_id),
+                        'mentions': _db.get_mentions(self._patient_id),
+                        'mood_counts': _db.get_mood_counts(self._patient_id, days=3),
+                        'streak': _db.get_streak(self._patient_id),
+                        'sessions': _db.get_session_summaries(self._patient_id, limit=1),
+                        'cog_avg': _db.get_cognitive_avg(self._patient_id, days=7),
+                    }
+            except Exception as e:
+                print(f"[BRAIN] Supabase cache refresh error: {e}")
+
         try:
-            import db_supabase as _db
-            if _db.is_available():
-                # Patient profile
-                profile = _db.get_profile(self._patient_id)
-                if profile:
-                    pname = profile.get("preferred_name") or profile.get("name")
-                    if pname and not self.user_name:
-                        self.user_name = pname
-                        parts.append(f"patient's name is {pname}")
-                    fav = profile.get("favorite_topic")
-                    if fav:
-                        parts.append(f"their favorite topic is {fav}")
-                    notes = profile.get("personality_notes")
-                    if notes:
-                        parts.append(f"personality: {notes}")
+            sc = self._supa_cache
+            profile = sc.get('profile')
+            if profile:
+                pname = profile.get("preferred_name") or profile.get("name")
+                if pname and not self.user_name:
+                    self.user_name = pname
+                    parts.append(f"patient's name is {pname}")
+                fav = profile.get("favorite_topic")
+                if fav:
+                    parts.append(f"their favorite topic is {fav}")
+                notes = profile.get("personality_notes")
+                if notes:
+                    parts.append(f"personality: {notes}")
 
-                # Saved facts from past sessions
-                saved_facts = _db.get_facts(self._patient_id)
-                if saved_facts:
-                    fact_strs = [f["fact"] for f in saved_facts[:8]]
-                    # Merge with in-memory facts (avoid duplicates)
-                    for fs in fact_strs:
-                        if fs not in self.user_facts:
-                            self.user_facts.append(fs)
+            saved_facts = sc.get('facts', [])
+            if saved_facts:
+                fact_strs = [f["fact"] for f in saved_facts[:8]]
+                for fs in fact_strs:
+                    if fs not in self.user_facts:
+                        self.user_facts.append(fs)
 
-                # People/places/activities they've mentioned before
-                mentions = _db.get_mentions(self._patient_id)
-                if mentions:
-                    mention_parts = []
-                    for cat, items in mentions.items():
-                        mention_parts.append(f"{cat}: {', '.join(items[:4])}")
-                    if mention_parts:
-                        parts.append(f"things they've mentioned: {'; '.join(mention_parts)}")
+            mentions = sc.get('mentions', {})
+            if mentions:
+                mention_parts = []
+                for cat, items in mentions.items():
+                    mention_parts.append(f"{cat}: {', '.join(items[:4])}")
+                if mention_parts:
+                    parts.append(f"things they've mentioned: {'; '.join(mention_parts)}")
 
-                # Recent mood trend from DB
-                mood_counts = _db.get_mood_counts(self._patient_id, days=3)
-                if mood_counts:
-                    top_moods = sorted(mood_counts.items(), key=lambda x: x[1], reverse=True)[:3]
-                    trend = ", ".join(f"{m}({c})" for m, c in top_moods)
-                    parts.append(f"recent mood trend (3 days): {trend}")
+            mood_counts = sc.get('mood_counts', {})
+            if mood_counts:
+                top_moods = sorted(mood_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+                trend = ", ".join(f"{m}({c})" for m, c in top_moods)
+                parts.append(f"recent mood trend (3 days): {trend}")
 
-                # Conversation streak
-                streak = _db.get_streak(self._patient_id)
-                if streak >= 3:
-                    parts.append(f"they've chatted {streak} days in a row -- acknowledge their consistency")
+            streak = sc.get('streak', 0)
+            if streak >= 3:
+                parts.append(f"they've chatted {streak} days in a row -- acknowledge their consistency")
 
-                # Last session summary for continuity
-                sessions = _db.get_session_summaries(self._patient_id, limit=1)
-                if sessions:
-                    last = sessions[0]
-                    last_mood = last.get("dominant_mood", "")
-                    last_topics = last.get("topics_discussed", [])
-                    if last_mood or last_topics:
-                        parts.append(f"last session: mood was {last_mood}, talked about {', '.join(last_topics[:3])}")
+            sessions = sc.get('sessions', [])
+            if sessions:
+                last = sessions[0]
+                last_mood = last.get("dominant_mood", "")
+                last_topics = last.get("topics_discussed", [])
+                if last_mood or last_topics:
+                    parts.append(f"last session: mood was {last_mood}, talked about {', '.join(last_topics[:3])}")
 
-                # Cognitive performance
-                cog_avg = _db.get_cognitive_avg(self._patient_id, days=7)
-                if cog_avg > 0:
-                    parts.append(f"cognitive game avg this week: {cog_avg}%")
+            cog_avg = sc.get('cog_avg', 0)
+            if cog_avg > 0:
+                parts.append(f"cognitive game avg this week: {cog_avg}%")
         except Exception as e:
             print(f"[BRAIN] Supabase context error: {e}")
 
@@ -636,8 +907,65 @@ class Brain:
         options = RESPONSES.get(emotion, RESPONSES["neutral"])
         return random.choice(options)
 
+    def save_history(self):
+        """Persist conversation history + learned facts to Supabase."""
+        try:
+            import db_supabase as _db
+            if not _db.is_available():
+                return
+            # Only save user/assistant messages (skip system messages — they're rebuilt)
+            saveable = [m for m in self.history if m.get("role") in ("user", "assistant")]
+            # Keep last 40 exchanges (80 messages) to avoid bloat
+            if len(saveable) > 80:
+                saveable = saveable[-80:]
+            _db.save_chat_history(
+                history=saveable,
+                user_name=self.user_name or "",
+                user_facts=self.user_facts,
+                patient_id=self._patient_id,
+            )
+            print(f"[BRAIN] Saved {len(saveable)} messages to Supabase")
+        except Exception as e:
+            print(f"[BRAIN] save_history error: {e}")
+
+    def restore_history(self):
+        """Restore conversation history from Supabase (call once at startup)."""
+        try:
+            import db_supabase as _db
+            if not _db.is_available():
+                return False
+            data = _db.get_chat_history(self._patient_id)
+            if not data or not data.get("history"):
+                print("[BRAIN] No previous history found in Supabase")
+                return False
+            # Restore messages — keep system prompt as-is, append saved user/assistant turns
+            saved = data["history"]
+            # Filter to only user/assistant (safety check)
+            restored = [m for m in saved if m.get("role") in ("user", "assistant")]
+            if restored:
+                self.history.extend(restored)
+                print(f"[BRAIN] Restored {len(restored)} messages from last session")
+            # Restore name and facts
+            if data.get("user_name") and not self.user_name:
+                self.user_name = data["user_name"]
+                print(f"[BRAIN] Restored user name: {self.user_name}")
+            if data.get("user_facts"):
+                for fact in data["user_facts"]:
+                    if fact and fact not in self.user_facts:
+                        self.user_facts.append(fact)
+                if self.user_facts:
+                    print(f"[BRAIN] Restored {len(self.user_facts)} facts")
+            return True
+        except Exception as e:
+            print(f"[BRAIN] restore_history error: {e}")
+            return False
+
     def get_session_summary(self) -> dict:
         """Generate a summary of the current conversation session."""
+
+        # Persist conversation history to Supabase before summarizing
+        self.save_history()
+
         import time as _time
         mood_counts = {}
         for m in self.mood_history:

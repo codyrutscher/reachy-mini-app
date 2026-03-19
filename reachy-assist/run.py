@@ -52,7 +52,32 @@ def main():
         "--profile", choices=["elderly", "disabled"], default="elderly",
         help="Patient profile: 'elderly' or 'disabled' — adapts behavior, exercises, and conversation style",
     )
+    parser.add_argument(
+        "--realtime", action="store_true",
+        help="Use OpenAI Realtime API for full-duplex voice conversation (fastest, most natural)",
+    )
     args = parser.parse_args()
+
+    # Realtime mode — full-duplex voice via WebSocket, bypasses the normal pipeline
+    if args.realtime:
+        from config import SYSTEM_PROMPT
+        from realtime_conversation import RealtimeConversation
+
+        voice = os.environ.get("REACHY_VOICE", "shimmer")
+        # Realtime API supports: alloy, echo, shimmer (standard) + ash, ballad, coral, sage, verse
+        # nova is NOT supported in realtime — use shimmer as default
+        if voice == "nova":
+            voice = "shimmer"
+
+        print(f"[REALTIME] Starting full-duplex conversation (voice={voice})")
+
+        conv = RealtimeConversation(
+            system_prompt=SYSTEM_PROMPT,
+            voice=voice,
+            patient_id="default",
+        )
+        conv.start()
+        return
 
     brain_backend = args.brain if args.brain != "none" else None
 

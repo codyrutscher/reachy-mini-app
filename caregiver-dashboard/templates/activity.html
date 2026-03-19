@@ -3,20 +3,20 @@
 {% block extra_css %}
 <style>
   .activity-row {
-  border-bottom: 1px solid blue;
+  border-bottom: 1px solid var(--border);
   margin-top: 10px;
   border-radius: 8px;
   padding: 12px;
   display: flex;
   gap: 10px;
+  transition: background 0.15s;
   }
 
   .activity-row:hover { background: var(--card2); }
 
-   .activity-row:last-child {
+  .activity-row:last-child {
   border-bottom: none;
   }
-  .filter-bar { }
 
   .date-header {
     position: sticky;

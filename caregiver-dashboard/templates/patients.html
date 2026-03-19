@@ -29,6 +29,27 @@
   tr:nth-child(even) {
     background-color: var(--card2);
   }
+
+  .toast-local {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: var(--green);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 9999;
+  animation: fadeInOut 3s ease forwards;
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(10px); }
+  10% { opacity: 1; transform: translateY(0); }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 </style>
 {% endblock %}
 {% block body %}
@@ -39,6 +60,12 @@
       <div class="page-subtitle">Manage patient profiles and view their status</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
+      <select id="sortBy" class="form-input" onchange="render()" style="width:160px;">
+        <option value="name">Sort by Name</option>
+        <option value="room">Sort by Room</option>
+        <option value="mood">Sort by Mood</option>
+        <option value="last_active">Sort by Last Active</option>
+      </select>
       <input class="search-bar" id="searchInput" placeholder="Search patients..." oninput="filterPatients()">
       <button class="btn btn-primary" onclick="showAddModal()">+ Add Patient</button>
     </div>
@@ -137,6 +164,25 @@ function filterPatients(){
   render(q);
 }
 
+
+function showToast(message) {
+   var toast = document.createElement('div');
+   toast.textContent = message;
+   toast.className = 'toast toast-success';
+   toast.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;';
+   document.body.appendChild(toast);
+   setTimeout(function() { 
+    toast.remove(); 
+    }, 3000);
+}
+
+
+
+
+
+
+
+
 function render(filter) {
   const body = document.getElementById('patientBody');
   const empty = document.getElementById('emptyPatients');
@@ -144,6 +190,13 @@ function render(filter) {
 
   let filtered = patients;
   if(filter) filtered = patients.filter(p=>(p.name||'').toLowerCase().includes(filter)||(p.room||'').toLowerCase().includes(filter)||(p.conditions||'').toLowerCase().includes(filter));
+    
+  var sortKey = document.getElementById('sortBy').value;
+  filtered.sort(function(a, b) {
+    var va = (a[sortKey] || '').toString().toLowerCase();
+    var vb = (b[sortKey] || '').toString().toLowerCase();
+    return va.localeCompare(vb);
+  });
 
   const total = patients.length;
   const active = patients.filter(p => p.status === 'active').length;
@@ -271,6 +324,8 @@ async function addPatient() {
   hideAddModal();
   ['pName','pRoom','pAge','pNotes','pContact'].forEach(id=>document.getElementById(id).value='');
   loadPatients();
+  showToast('✅ Patient added successfully!');
+
 }
 
 async function removePatient(id) {

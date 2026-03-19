@@ -32,8 +32,19 @@ Thumbs.db
 
 # Environment
 .env
+.env.*
+!.env.example
 
 # Coverage
 .coverage
 htmlcov/
 .pytest_cache/
+
+# Kiro
+.kiro/
+
+# Sound files (large binaries)
+*.wav
+
+# Ruff cache
+.ruff_cache/

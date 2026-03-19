@@ -185,6 +185,19 @@ def init_db():
             source TEXT DEFAULT 'simulated',
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS incident_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_id TEXT NOT NULL DEFAULT 'default',
+            incident_type TEXT NOT NULL,
+            severity TEXT DEFAULT 'medium',
+            description TEXT NOT NULL,
+            actions_taken TEXT DEFAULT '',
+            reported_by TEXT NOT NULL,
+            resolved INTEGER DEFAULT 0,
+            resolved_at TEXT,
+            created_at TEXT NOT NULL
+        );
     """)
     # Initialize patient status defaults
     defaults = {"mood": "unknown", "last_active": "", "last_said": "",
@@ -850,3 +863,95 @@ def update_user_role(username, role):
     conn = _get_conn()
     conn.execute("UPDATE users SET role=? WHERE username=?", (role, username))
     conn.commit()
+
+
+# ── Bot data stubs (SQLite fallback) ────────────────────────────────
+# These mirror the db_postgres.py bot functions so the dashboard
+# doesn't crash when running without Supabase.
+
+# ── Incident Reports ────────────────────────────────────────────────
+
+def add_incident(patient_id, incident_type, severity, description, actions_taken, reported_by):
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur = conn.execute(
+        """INSERT INTO incident_reports
+           (patient_id, incident_type, severity, description, actions_taken, reported_by, created_at)
+           VALUES (?,?,?,?,?,?,?)""",
+        (patient_id, incident_type, severity, description, actions_taken, reported_by, now),
+    )
+    conn.commit()
+    return get_incident(cur.lastrowid)
+
+
+def get_incidents(patient_id=None, limit=100):
+    conn = _get_conn()
+    if patient_id:
+        rows = conn.execute(
+            "SELECT * FROM incident_reports WHERE patient_id=? ORDER BY id DESC LIMIT ?",
+            (patient_id, limit),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM incident_reports ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_incident(incident_id):
+    conn = _get_conn()
+    row = conn.execute("SELECT * FROM incident_reports WHERE id=?", (incident_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def resolve_incident(incident_id):
+    conn = _get_conn()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE incident_reports SET resolved=1, resolved_at=? WHERE id=?",
+        (now, incident_id),
+    )
+    conn.commit()
+
+
+def delete_incident(incident_id):
+    conn = _get_conn()
+    conn.execute("DELETE FROM incident_reports WHERE id=?", (incident_id,))
+    conn.commit()
+
+
+def get_bot_conversations(patient_id="default", limit=500):
+    return []
+
+def get_bot_moods(patient_id="default", limit=50):
+    return []
+
+def get_bot_session_summaries(patient_id="default", limit=20):
+    return []
+
+def get_bot_facts(patient_id="default"):
+    return []
+
+def get_bot_alerts(patient_id="default", limit=50):
+    return []
+
+def get_bot_profile(patient_id="default"):
+    return None
+
+def get_bot_weekly_reports(patient_id="default", limit=4):
+    return []
+
+def get_bot_cognitive_scores(patient_id="default", limit=20):
+    return []
+
+def get_bot_exercises(patient_id="default", limit=20):
+    return []
+
+def get_bot_sleep_log(patient_id="default", limit=14):
+    return []
+
+def get_bot_reminders(patient_id="default"):
+    return []
+
+def get_bot_streaks(patient_id="default"):
+    return 0

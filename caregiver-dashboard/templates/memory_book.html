@@ -1,0 +1,105 @@
+{% extends "_base.html" %}
+{% block title %}Memory Book — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .memory-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; }
+  .memory-card-icon { font-size: 32px; margin-bottom: 8px; }
+  .memory-card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; }
+  .memory-item { font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+  .memory-item:last-child { border-bottom: none; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📖 Memory Book</div>
+      <div class="page-subtitle">Everything Reachy has learned — a life in stories</div>
+    </div>
+  </div>
+  <div id="profileBar" style="margin-bottom:18px;"></div>
+  <div class="memory-grid" id="memoryGrid"></div>
+  <div class="empty" id="memoryEmpty" style="display:none;">
+    <div class="empty-icon">📖</div>
+    <p>No memories yet. As Reachy talks with the patient, their stories will appear here.</p>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var CATEGORIES = {
+  family: {icon: '👨‍👩‍👧', label: 'Family'},
+  pet: {icon: '🐾', label: 'Pets'},
+  career: {icon: '💼', label: 'Career'},
+  interest: {icon: '⭐', label: 'Interests & Hobbies'},
+  preference: {icon: '💝', label: 'Preferences'},
+  location: {icon: '📍', label: 'Places'},
+  health: {icon: '🩺', label: 'Health'},
+  gratitude: {icon: '🙏', label: 'Gratitude'},
+  general: {icon: '💭', label: 'Other Memories'}
+};
+
+async function loadMemoryBook() {
+  var facts = [];
+  var profile = {};
+  try {
+    var factsResp = await fetch('/api/bot/facts').then(function(r) { return r.json(); });
+    if (Array.isArray(factsResp)) facts = factsResp;
+    var profileResp = await fetch('/api/bot/profile').then(function(r) { return r.json(); });
+    if (profileResp && !profileResp.error) profile = profileResp;
+  } catch(e) {
+    console.log('Memory book load error:', e);
+  }
+
+  var bar = document.getElementById('profileBar');
+  var name = (profile && profile.preferred_name) || (profile && profile.name) || 'Patient';
+  bar.innerHTML = '<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;display:flex;align-items:center;gap:14px;">' +
+    '<div style="width:48px;height:48px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;font-size:24px;">📖</div>' +
+    '<div><div style="font-weight:600;font-size:16px;">' + name + '\'s Memory Book</div>' +
+    '<div style="font-size:12px;color:var(--muted);">' + facts.length + ' memories collected</div></div></div>';
+
+  var grouped = {};
+  facts.forEach(function(f) {
+    var cat = f.category || 'general';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(f.fact || f.text || '');
+  });
+
+  var grid = document.getElementById('memoryGrid');
+  var empty = document.getElementById('memoryEmpty');
+  if (!facts.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+  empty.style.display = 'none';
+
+  var html = '';
+  Object.keys(CATEGORIES).forEach(function(cat) {
+    var items = grouped[cat];
+    if (!items || !items.length) return;
+    var cfg = CATEGORIES[cat];
+    html += '<div class="memory-card">';
+    html += '<div class="memory-card-icon">' + cfg.icon + '</div>';
+    html += '<div class="memory-card-title">' + cfg.label + '</div>';
+    items.forEach(function(fact) {
+      html += '<div class="memory-item">' + fact + '</div>';
+    });
+    html += '</div>';
+  });
+
+  Object.keys(grouped).forEach(function(cat) {
+    if (CATEGORIES[cat]) return;
+    var items = grouped[cat];
+    html += '<div class="memory-card">';
+    html += '<div class="memory-card-icon">💭</div>';
+    html += '<div class="memory-card-title">' + cat + '</div>';
+    items.forEach(function(fact) {
+      html += '<div class="memory-item">' + fact + '</div>';
+    });
+    html += '</div>';
+  });
+
+  grid.innerHTML = html;
+}
+
+loadMemoryBook();
+</script>
+{% endblock %}

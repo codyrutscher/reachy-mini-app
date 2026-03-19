@@ -80,6 +80,7 @@ async function addMed(){
   if(!d.name)return alert('Enter a name');
   await fetch('/api/medications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
   hideAddModal();['mName','mDosage','mTimes','mNotes'].forEach(function(id){document.getElementById(id).value='';});load();
+  showToast('Medication added');
 }
 async function delMed(id){if(!confirm('Remove?'))return;await fetch('/api/medications/'+id,{method:'DELETE'});load();}
 async function logMed(id,status,time){await fetch('/api/medications/'+id+'/log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status,scheduled_time:time})});load();}

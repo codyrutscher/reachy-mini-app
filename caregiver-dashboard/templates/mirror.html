@@ -1,0 +1,355 @@
+{% extends "_base.html" %}
+{% block title %}Mirror Mode — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .mirror { max-width: 1000px; margin: 0 auto; padding: 24px; }
+  .mirror-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .video-box { position: relative; background: #000; border-radius: 12px; overflow: hidden; min-height: 320px; }
+  .video-box video { width: 100%; display: block; transform: scaleX(-1); border-radius: 12px; }
+  .video-box canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
+  .info-panel { display: flex; flex-direction: column; gap: 12px; }
+  .pose-display { font-variant-numeric: tabular-nums; }
+  .pose-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .pose-row:last-child { border-bottom: none; }
+  .pose-label { color: var(--muted); }
+  .pose-val { color: var(--blue); font-weight: 600; }
+  .mirror-status { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+    border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .mirror-status.active { background: rgba(34,197,94,0.15); color: var(--green); }
+  .mirror-status.inactive { background: rgba(239,141,151,0.15); color: var(--red); }
+  .mirror-status .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .mirror-status.active .dot { background: var(--green); animation: pulse 2s infinite; }
+  .mirror-status.inactive .dot { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .sensitivity-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .sensitivity-row label { color: var(--muted); width: 80px; }
+  .sensitivity-row input[type=range] { flex: 1; accent-color: var(--blue); }
+  .sensitivity-row .val { width: 30px; text-align: center; color: var(--blue); font-size: 12px; }
+  .no-cam { display: flex; align-items: center; justify-content: center; min-height: 320px;
+    color: var(--muted); flex-direction: column; gap: 8px; font-size: 14px; }
+  @media (max-width: 800px) { .mirror-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block body %}
+<div class="mirror">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🪞 Mirror Mode</div>
+      <div class="page-subtitle">Reachy mimics your head movements in real-time</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="mirror-status inactive" id="mirrorStatus"><div class="dot"></div><span id="mirrorText">Starting...</span></div>
+      <div class="conn-badge offline" id="connBadge"><div class="dot"></div><span id="connText">Checking...</span></div>
+    </div>
+  </div>
+
+  <div class="mirror-grid">
+    <div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div class="video-box" id="videoBox">
+          <video id="webcam" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="no-cam" id="noCam" style="display:none;">
+            <div style="font-size:36px;">📷</div>
+            <p>Camera access denied or unavailable</p>
+            <button class="btn btn-sm" onclick="startCamera()">Retry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-panel">
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">🎯 Live Pose</div>
+        <div class="pose-display">
+          <div class="pose-row"><span class="pose-label">Pitch (nod)</span><span class="pose-val" id="dPitch">0°</span></div>
+          <div class="pose-row"><span class="pose-label">Yaw (turn)</span><span class="pose-val" id="dYaw">0°</span></div>
+          <div class="pose-row"><span class="pose-label">Roll (tilt)</span><span class="pose-val" id="dRoll">0°</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">⚙️ Settings</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div class="sensitivity-row">
+            <label>Sensitivity</label>
+            <input type="range" id="sensitivity" min="0.5" max="2.0" step="0.1" value="1.0">
+            <span class="val" id="sensVal">1.0</span>
+          </div>
+          <div class="sensitivity-row">
+            <label>Smoothing</label>
+            <input type="range" id="smoothing" min="0.1" max="0.9" step="0.1" value="0.5">
+            <span class="val" id="smoothVal">0.5</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <button class="btn btn-sm" id="toggleBtn" onclick="toggleMirror()">⏸ Pause</button>
+            <button class="btn btn-sm btn-ghost" onclick="resetRobot()">↺ Reset</button>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">💡 Tips</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.6;">
+          • Sit facing your camera with good lighting<br>
+          • Keep your face centered in the frame<br>
+          • Slow movements work best<br>
+          • Adjust sensitivity if movements feel too big or small<br>
+          • Smoothing reduces jitter (higher = smoother but slower)
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script>
+// ── State ──────────────────────────────────────────────────────────
+var mirrorActive = true;
+var sending = false;
+var smoothPitch = 0, smoothYaw = 0, smoothRoll = 0;
+var lastSendTime = 0;
+var SEND_INTERVAL = 100; // ms between pose sends
+
+// ── Sensitivity / smoothing controls ───────────────────────────────
+document.getElementById('sensitivity').addEventListener('input', function() {
+  document.getElementById('sensVal').textContent = this.value;
+});
+document.getElementById('smoothing').addEventListener('input', function() {
+  document.getElementById('smoothVal').textContent = this.value;
+});
+
+// ── Camera setup ───────────────────────────────────────────────────
+var videoEl = document.getElementById('webcam');
+var canvasEl = document.getElementById('overlay');
+var ctx = canvasEl.getContext('2d');
+
+function startCamera() {
+  document.getElementById('noCam').style.display = 'none';
+  videoEl.style.display = 'block';
+
+  navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } })
+    .then(function(stream) {
+      videoEl.srcObject = stream;
+      videoEl.onloadedmetadata = function() {
+        canvasEl.width = videoEl.videoWidth;
+        canvasEl.height = videoEl.videoHeight;
+        initFaceMesh();
+      };
+    })
+    .catch(function(err) {
+      console.error('Camera error:', err);
+      videoEl.style.display = 'none';
+      document.getElementById('noCam').style.display = 'flex';
+      setStatus(false, 'No camera');
+    });
+}
+
+// ── Head pose estimation from face landmarks ───────────────────────
+// Uses key landmarks to compute pitch, yaw, roll via simple geometry.
+// Landmark indices: nose tip=1, chin=152, left eye outer=263, right eye outer=33,
+// forehead=10, left mouth=287, right mouth=57
+
+function estimateHeadPose(landmarks) {
+  // Get key points (normalized 0-1 coordinates)
+  var nose = landmarks[1];
+  var chin = landmarks[152];
+  var leftEye = landmarks[263];
+  var rightEye = landmarks[33];
+  var forehead = landmarks[10];
+  var leftMouth = landmarks[287];
+  var rightMouth = landmarks[57];
+
+  // Yaw: horizontal offset of nose relative to eye midpoint
+  var eyeMidX = (leftEye.x + rightEye.x) / 2;
+  var eyeWidth = Math.abs(leftEye.x - rightEye.x);
+  var yaw = 0;
+  if (eyeWidth > 0.01) {
+    yaw = ((nose.x - eyeMidX) / eyeWidth) * -60; // negative because camera is mirrored
+  }
+
+  // Pitch: vertical offset of nose relative to eye-chin midpoint
+  var eyeMidY = (leftEye.y + rightEye.y) / 2;
+  var faceHeight = Math.abs(chin.y - forehead.y);
+  var pitch = 0;
+  if (faceHeight > 0.01) {
+    var noseFrac = (nose.y - eyeMidY) / faceHeight;
+    pitch = (noseFrac - 0.35) * -80; // calibrated so looking straight = ~0
+  }
+
+  // Roll: angle between eyes
+  var dx = rightEye.x - leftEye.x;
+  var dy = rightEye.y - leftEye.y;
+  var roll = Math.atan2(dy, dx) * (180 / Math.PI);
+
+  return { pitch: pitch, yaw: yaw, roll: roll };
+}
+
+// ── MediaPipe Face Mesh ────────────────────────────────────────────
+var faceMesh = null;
+
+function initFaceMesh() {
+  faceMesh = new FaceMesh({
+    locateFile: function(file) {
+      return 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/' + file;
+    }
+  });
+
+  faceMesh.setOptions({
+    maxNumFaces: 1,
+    refineLandmarks: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  faceMesh.onResults(onFaceMeshResults);
+
+  // Use MediaPipe Camera utility for frame loop
+  var camera = new Camera(videoEl, {
+    onFrame: function() {
+      if (mirrorActive && faceMesh) {
+        return faceMesh.send({ image: videoEl });
+      }
+      return Promise.resolve();
+    },
+    width: 640,
+    height: 480
+  });
+  camera.start();
+  setStatus(true, 'Tracking');
+}
+
+function onFaceMeshResults(results) {
+  // Draw face mesh overlay
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    setStatus(false, 'No face detected');
+    return;
+  }
+
+  setStatus(true, 'Tracking');
+  var landmarks = results.multiFaceLandmarks[0];
+
+  // Draw dots on key landmarks
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.6)';
+  var keyPoints = [1, 152, 263, 33, 10, 287, 57];
+  for (var i = 0; i < keyPoints.length; i++) {
+    var pt = landmarks[keyPoints[i]];
+    ctx.beginPath();
+    ctx.arc(pt.x * canvasEl.width, pt.y * canvasEl.height, 3, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+
+  // Draw face oval outline
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+  ctx.lineWidth = 1;
+  var oval = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
+              397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
+              172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109, 10];
+  ctx.beginPath();
+  for (var j = 0; j < oval.length; j++) {
+    var p = landmarks[oval[j]];
+    if (j === 0) ctx.moveTo(p.x * canvasEl.width, p.y * canvasEl.height);
+    else ctx.lineTo(p.x * canvasEl.width, p.y * canvasEl.height);
+  }
+  ctx.stroke();
+
+  // Estimate head pose
+  var pose = estimateHeadPose(landmarks);
+  var sens = parseFloat(document.getElementById('sensitivity').value);
+  var alpha = parseFloat(document.getElementById('smoothing').value);
+
+  // Apply sensitivity
+  var rawPitch = pose.pitch * sens;
+  var rawYaw = pose.yaw * sens;
+  var rawRoll = pose.roll * sens;
+
+  // Clamp to robot limits
+  rawPitch = Math.max(-25, Math.min(25, rawPitch));
+  rawYaw = Math.max(-30, Math.min(30, rawYaw));
+  rawRoll = Math.max(-25, Math.min(25, rawRoll));
+
+  // Exponential smoothing
+  smoothPitch = smoothPitch * alpha + rawPitch * (1 - alpha);
+  smoothYaw = smoothYaw * alpha + rawYaw * (1 - alpha);
+  smoothRoll = smoothRoll * alpha + rawRoll * (1 - alpha);
+
+  // Update display
+  document.getElementById('dPitch').textContent = Math.round(smoothPitch) + '°';
+  document.getElementById('dYaw').textContent = Math.round(smoothYaw) + '°';
+  document.getElementById('dRoll').textContent = Math.round(smoothRoll) + '°';
+
+  // Send to robot (throttled)
+  var now = Date.now();
+  if (now - lastSendTime > SEND_INTERVAL && !sending) {
+    lastSendTime = now;
+    sendToRobot(Math.round(smoothPitch), Math.round(smoothYaw), Math.round(smoothRoll));
+  }
+}
+
+// ── Send pose to robot ─────────────────────────────────────────────
+function sendToRobot(pitch, yaw, roll) {
+  sending = true;
+  fetch('/api/robot/pose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pitch: pitch, roll: roll, yaw: yaw, duration: 0.15 })
+  }).catch(function() {}).finally(function() { sending = false; });
+}
+
+// ── Controls ───────────────────────────────────────────────────────
+function toggleMirror() {
+  mirrorActive = !mirrorActive;
+  var btn = document.getElementById('toggleBtn');
+  if (mirrorActive) {
+    btn.textContent = '⏸ Pause';
+    setStatus(true, 'Tracking');
+  } else {
+    btn.textContent = '▶ Resume';
+    setStatus(false, 'Paused');
+  }
+}
+
+function resetRobot() {
+  smoothPitch = 0; smoothYaw = 0; smoothRoll = 0;
+  fetch('/api/robot/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}'
+  }).then(function() {
+    if (typeof showToast === 'function') showToast('Reset to neutral', 'success');
+  }).catch(function() {});
+}
+
+function setStatus(active, text) {
+  var el = document.getElementById('mirrorStatus');
+  var txt = document.getElementById('mirrorText');
+  el.className = 'mirror-status ' + (active ? 'active' : 'inactive');
+  txt.textContent = text;
+}
+
+// ── Connection check ───────────────────────────────────────────────
+function checkConnection() {
+  fetch('/api/robot/health').then(function(r) { return r.json(); }).then(function(d) {
+    var badge = document.getElementById('connBadge');
+    var text = document.getElementById('connText');
+    if (d.robot_connected) {
+      badge.className = 'conn-badge online';
+      text.textContent = d.sim_mode ? 'Simulation' : 'Connected';
+    } else {
+      badge.className = 'conn-badge offline';
+      text.textContent = 'No robot';
+    }
+  }).catch(function() {
+    document.getElementById('connBadge').className = 'conn-badge offline';
+    document.getElementById('connText').textContent = 'Offline';
+  });
+}
+
+// ── Init ───────────────────────────────────────────────────────────
+checkConnection();
+setInterval(checkConnection, 5000);
+startCamera();
+</script>
+{% endblock %}

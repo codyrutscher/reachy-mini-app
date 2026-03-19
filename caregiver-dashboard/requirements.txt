@@ -1,5 +1,6 @@
 flask
 flask-cors
+python-dotenv
 bcrypt
 
 # PostgreSQL/Supabase support (optional — falls back to SQLite)

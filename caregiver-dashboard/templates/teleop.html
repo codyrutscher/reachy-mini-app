@@ -1,0 +1,456 @@
+{% extends "_base.html" %}
+{% block title %}Teleoperation — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .teleop { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .teleop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .cam-box { background: #000; border-radius: 12px; overflow: hidden; position: relative; min-height: 320px; }
+  .cam-box img { width: 100%; display: block; }
+  .cam-offline { display: flex; align-items: center; justify-content: center;
+    min-height: 320px; color: var(--muted); flex-direction: column; gap: 8px; font-size: 14px; }
+  .ctrl-panel { display: flex; flex-direction: column; gap: 12px; }
+  .slider-group { display: flex; flex-direction: column; gap: 4px; }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-label { font-size: 12px; color: var(--muted); width: 80px; text-align: right; }
+  .slider-val { font-size: 12px; color: var(--blue); width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+  input[type=range] { flex: 1; accent-color: var(--blue); background: transparent; height: 6px; }
+  .action-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .action-btn { padding: 8px 4px; border-radius: 8px; font-size: 11px; font-weight: 500;
+    cursor: pointer; border: 1px solid var(--border); background: var(--card2); color: var(--text);
+    transition: all 0.15s; text-align: center; }
+  .action-btn:hover { border-color: var(--blue); background: rgba(59,130,246,0.1); }
+  .action-btn:active { transform: scale(0.95); }
+  .expr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .expr-btn { padding: 10px 4px; border-radius: 8px; font-size: 20px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--card2); transition: all 0.15s; text-align: center; }
+  .expr-btn:hover { border-color: var(--blue); background: rgba(59,130,246,0.1); }
+  .expr-btn:active { transform: scale(0.95); }
+  .expr-btn span { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .conn-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+    border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .conn-badge.online { background: rgba(34,197,94,0.15); color: var(--green); }
+  .conn-badge.offline { background: rgba(239,68,68,0.15); color: var(--red); }
+  .conn-badge .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .conn-badge.online .dot { background: var(--green); }
+  .conn-badge.offline .dot { background: var(--red); }
+  .section-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+  .gp-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+    border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .gp-badge.connected { background: rgba(168,85,247,0.15); color: var(--purple); }
+  .gp-badge.disconnected { background: rgba(139,141,151,0.1); color: var(--muted); }
+  .gp-help { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .gp-help kbd { background: var(--card2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 1px 5px; font-size: 10px; font-family: inherit; }
+  .gp-viz { display: flex; gap: 16px; align-items: center; justify-content: center; padding: 8px 0; }
+  .gp-stick { width: 64px; height: 64px; background: var(--card2); border: 1px solid var(--border);
+    border-radius: 50%; position: relative; }
+  .gp-stick-dot { width: 12px; height: 12px; background: var(--blue); border-radius: 50%;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); transition: all 0.05s; }
+  .gp-stick-label { font-size: 10px; color: var(--muted); text-align: center; margin-top: 4px; }
+  .gp-triggers { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .gp-trig-bar { width: 40px; height: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+  .gp-trig-fill { height: 100%; background: var(--purple); width: 0%; transition: width 0.05s; }
+  .gp-trig-label { font-size: 9px; color: var(--muted); }
+  @media (max-width: 800px) { .teleop-grid { grid-template-columns: 1fr; } .action-grid, .expr-grid { grid-template-columns: repeat(3, 1fr); } }
+</style>
+{% endblock %}
+{% block body %}
+<div class="teleop">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🎮 Teleoperation</div>
+      <div class="page-subtitle">Remote control Reachy Mini — controller, keyboard, or sliders</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="gp-badge disconnected" id="gpBadge">🎮 <span id="gpText">No controller</span></div>
+      <div class="conn-badge offline" id="connBadge"><div class="dot"></div><span id="connText">Checking...</span></div>
+      <button class="btn btn-ghost btn-sm" onclick="resetPose()">↺ Reset</button>
+    </div>
+  </div>
+
+  <div class="teleop-grid">
+    <!-- Left column -->
+    <div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div class="cam-box" id="camBox">
+          <img id="camImg" src="/api/camera/stream" style="display:none;"
+            onerror="this.style.display='none';"
+            onload="this.style.display='block';document.getElementById('camOff').style.display='none';">
+          <div class="cam-offline" id="camOff">
+            <div style="font-size:36px;">🤖</div>
+            <p>Camera offline — use MuJoCo window for visual feedback</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gamepad visualizer -->
+      <div class="card" style="margin-top:12px;" id="gpCard">
+        <div class="section-title">🎮 Controller</div>
+        <div class="gp-viz">
+          <div>
+            <div class="gp-stick"><div class="gp-stick-dot" id="gpDotL"></div></div>
+            <div class="gp-stick-label">Head P/Y</div>
+          </div>
+          <div class="gp-triggers">
+            <div class="gp-trig-label">LT</div>
+            <div class="gp-trig-bar"><div class="gp-trig-fill" id="gpLT"></div></div>
+            <div style="height:16px;"></div>
+            <div class="gp-trig-bar"><div class="gp-trig-fill" id="gpRT"></div></div>
+            <div class="gp-trig-label">RT</div>
+          </div>
+          <div>
+            <div class="gp-stick"><div class="gp-stick-dot" id="gpDotR"></div></div>
+            <div class="gp-stick-label">Body / Ant</div>
+          </div>
+        </div>
+        <div class="gp-help" style="margin-top:8px;">
+          <kbd>Left Stick</kbd> Head pitch + yaw · <kbd>Right Stick X</kbd> Body yaw · <kbd>Right Stick Y</kbd> Antennas<br>
+          <kbd>LB/RB</kbd> Head roll · <kbd>LT/RT</kbd> Left/right antenna<br>
+          <kbd>A</kbd> Joy · <kbd>B</kbd> Sad · <kbd>X</kbd> Surprise · <kbd>Y</kbd> Neutral<br>
+          <kbd>D↑</kbd> Greet · <kbd>D↓</kbd> Bow · <kbd>D←</kbd> Shake · <kbd>D→</kbd> Nod · <kbd>Start</kbd> Reset
+        </div>
+      </div>
+
+      <!-- Expressions -->
+      <div class="card" style="margin-top:12px;">
+        <div class="section-title">😊 Expressions</div>
+        <div class="expr-grid">
+          <button class="expr-btn" onclick="sendExpr('joy')">😄<span>Joy (A)</span></button>
+          <button class="expr-btn" onclick="sendExpr('sadness')">😢<span>Sad (B)</span></button>
+          <button class="expr-btn" onclick="sendExpr('surprise')">😲<span>Surprise (X)</span></button>
+          <button class="expr-btn" onclick="sendExpr('neutral')" style="border-color:var(--blue);">😐<span>Neutral (Y)</span></button>
+          <button class="expr-btn" onclick="sendExpr('anger')">😠<span>Anger</span></button>
+          <button class="expr-btn" onclick="sendExpr('fear')">😨<span>Fear</span></button>
+          <button class="expr-btn" onclick="sendExpr('disgust')">🤢<span>Disgust</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Controls -->
+    <div class="ctrl-panel">
+      <div class="card">
+        <div class="section-title">🤖 Head Control</div>
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Pitch</span>
+            <input type="range" id="pitch" min="-25" max="25" value="0" step="1" oninput="updateSlider(this)">
+            <span class="slider-val" id="pitchVal">0°</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">Roll</span>
+            <input type="range" id="roll" min="-25" max="25" value="0" step="1" oninput="updateSlider(this)">
+            <span class="slider-val" id="rollVal">0°</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">Yaw</span>
+            <input type="range" id="yaw" min="-30" max="30" value="0" step="1" oninput="updateSlider(this)">
+            <span class="slider-val" id="yawVal">0°</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">📡 Antennas</div>
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Left</span>
+            <input type="range" id="antL" min="-100" max="100" value="0" step="5" oninput="updateSlider(this)">
+            <span class="slider-val" id="antLVal">0</span>
+          </div>
+          <div class="slider-row">
+            <span class="slider-label">Right</span>
+            <input type="range" id="antR" min="-100" max="100" value="0" step="5" oninput="updateSlider(this)">
+            <span class="slider-val" id="antRVal">0</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">🔄 Body</div>
+        <div class="slider-group">
+          <div class="slider-row">
+            <span class="slider-label">Body Yaw</span>
+            <input type="range" id="bodyYaw" min="-20" max="20" value="0" step="1" oninput="updateSlider(this)">
+            <span class="slider-val" id="bodyYawVal">0°</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title">⚡ Quick Actions</div>
+        <div class="action-grid">
+          <button class="action-btn" onclick="sendAction('greet')">👋 Greet</button>
+          <button class="action-btn" onclick="sendAction('nod')">✅ Nod</button>
+          <button class="action-btn" onclick="sendAction('shake')">❌ Shake</button>
+          <button class="action-btn" onclick="sendAction('bow')">🙇 Bow</button>
+          <button class="action-btn" onclick="sendAction('dance')">💃 Dance</button>
+          <button class="action-btn" onclick="sendAction('celebrate')">🎉 Celebrate</button>
+          <button class="action-btn" onclick="sendAction('think')">🤔 Think</button>
+          <button class="action-btn" onclick="sendAction('listen')">👂 Listen</button>
+          <button class="action-btn" onclick="sendAction('curious')">🐶 Curious</button>
+          <button class="action-btn" onclick="sendAction('peek')">🙈 Peek</button>
+          <button class="action-btn" onclick="sendAction('wiggle')">🐛 Wiggle</button>
+          <button class="action-btn" onclick="sendAction('look around')">👀 Look</button>
+          <button class="action-btn" onclick="sendAction('comfort')">🤗 Comfort</button>
+          <button class="action-btn" onclick="sendAction('excited')">🤩 Excited</button>
+          <button class="action-btn" onclick="sendAction('sleepy')">😴 Sleepy</button>
+          <button class="action-btn" onclick="sendAction('wake up')">☀️ Wake</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+// ── Slider / pose sending ──────────────────────────────────────────
+var sendTimer = null;
+var sending = false;
+
+function updateSlider(el) {
+  var id = el.id;
+  var val = el.value;
+  var suffix = (id === 'antL' || id === 'antR') ? '' : '°';
+  document.getElementById(id + 'Val').textContent = val + suffix;
+  clearTimeout(sendTimer);
+  sendTimer = setTimeout(sendPose, 80);
+}
+
+function setSlider(id, val) {
+  var el = document.getElementById(id);
+  var mn = parseInt(el.min), mx = parseInt(el.max);
+  val = Math.round(Math.max(mn, Math.min(mx, val)));
+  if (parseInt(el.value) === val) return;
+  el.value = val;
+  var suffix = (id === 'antL' || id === 'antR') ? '' : '°';
+  document.getElementById(id + 'Val').textContent = val + suffix;
+}
+
+function sendPose() {
+  if (sending) return;
+  sending = true;
+  var pitch = parseInt(document.getElementById('pitch').value);
+  var roll = parseInt(document.getElementById('roll').value);
+  var yaw = parseInt(document.getElementById('yaw').value);
+  var antL = parseInt(document.getElementById('antL').value) / 100;
+  var antR = parseInt(document.getElementById('antR').value) / 100;
+  var bodyYaw = parseInt(document.getElementById('bodyYaw').value);
+
+  fetch('/api/robot/pose', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pitch: pitch, roll: roll, yaw: yaw, antennas: [antL, antR], body_yaw: bodyYaw, duration: 0.3})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) showToast(d.error, 'error');
+  }).catch(function() {
+    showToast('Robot unreachable', 'error');
+  }).finally(function() { sending = false; });
+}
+
+function sendExpr(emotion) {
+  fetch('/api/robot/expression', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({emotion: emotion})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) showToast(d.error, 'error');
+    else showToast('Expression: ' + emotion, 'info');
+  }).catch(function() { showToast('Robot unreachable', 'error'); });
+}
+
+function sendAction(action) {
+  fetch('/api/robot/action', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({action: action})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) showToast(d.error, 'error');
+    else if (d.status === 'unknown_action') showToast('Unknown action: ' + action, 'error');
+    else showToast('Action: ' + action, 'info');
+  }).catch(function() { showToast('Robot unreachable', 'error'); });
+}
+
+function resetPose() {
+  ['pitch','roll','yaw','antL','antR','bodyYaw'].forEach(function(id) {
+    var el = document.getElementById(id);
+    el.value = 0;
+    var suffix = (id === 'antL' || id === 'antR') ? '' : '°';
+    document.getElementById(id + 'Val').textContent = '0' + suffix;
+  });
+  fetch('/api/robot/reset', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: '{}'
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.error) showToast(d.error, 'error');
+    else showToast('Reset to neutral', 'success');
+  }).catch(function() { showToast('Robot unreachable', 'error'); });
+}
+
+// ── Connection check ───────────────────────────────────────────────
+function checkConnection() {
+  fetch('/api/robot/health').then(function(r) { return r.json(); }).then(function(d) {
+    var badge = document.getElementById('connBadge');
+    var text = document.getElementById('connText');
+    if (d.robot_connected) {
+      badge.className = 'conn-badge online';
+      text.textContent = d.sim_mode ? 'Simulation' : 'Connected';
+    } else {
+      badge.className = 'conn-badge offline';
+      text.textContent = 'No robot';
+    }
+  }).catch(function() {
+    document.getElementById('connBadge').className = 'conn-badge offline';
+    document.getElementById('connText').textContent = 'Offline';
+  });
+}
+
+// ── Keyboard controls ──────────────────────────────────────────────
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' && e.target.type !== 'range') return;
+  var step = e.shiftKey ? 5 : 2;
+  var changed = false;
+  switch(e.key) {
+    case 'ArrowUp':    nudge('pitch', -step); changed = true; break;
+    case 'ArrowDown':  nudge('pitch', step); changed = true; break;
+    case 'ArrowLeft':  nudge('yaw', -step); changed = true; break;
+    case 'ArrowRight': nudge('yaw', step); changed = true; break;
+    case 'q': case 'Q': nudge('roll', -step); changed = true; break;
+    case 'e': case 'E': nudge('roll', step); changed = true; break;
+    case 'r': case 'R': resetPose(); changed = true; break;
+    case ' ': e.preventDefault(); resetPose(); changed = true; break;
+  }
+  if (changed) e.preventDefault();
+});
+
+function nudge(id, delta) {
+  var el = document.getElementById(id);
+  var v = parseInt(el.value) + delta;
+  v = Math.max(parseInt(el.min), Math.min(parseInt(el.max), v));
+  el.value = v;
+  updateSlider(el);
+}
+
+// ── Gamepad (Xbox controller) ──────────────────────────────────────
+var gpConnected = false;
+var gpIndex = null;
+var gpPrevButtons = {};
+var gpSendTimer = null;
+var gpDirty = false;
+var DEADZONE = 0.15;
+
+window.addEventListener('gamepadconnected', function(e) {
+  gpConnected = true;
+  gpIndex = e.gamepad.index;
+  document.getElementById('gpBadge').className = 'gp-badge connected';
+  document.getElementById('gpText').textContent = e.gamepad.id.substring(0, 30);
+  showToast('🎮 Controller connected', 'success');
+  gpPrevButtons = {};
+  requestAnimationFrame(gpLoop);
+});
+
+window.addEventListener('gamepaddisconnected', function(e) {
+  if (e.gamepad.index === gpIndex) {
+    gpConnected = false;
+    gpIndex = null;
+    document.getElementById('gpBadge').className = 'gp-badge disconnected';
+    document.getElementById('gpText').textContent = 'No controller';
+    showToast('🎮 Controller disconnected', 'info');
+  }
+});
+
+function applyDeadzone(val) {
+  return Math.abs(val) < DEADZONE ? 0 : val;
+}
+
+function gpLoop() {
+  if (!gpConnected) return;
+  var gamepads = navigator.getGamepads();
+  if (!gamepads || gpIndex === null) { requestAnimationFrame(gpLoop); return; }
+  var gp = gamepads[gpIndex];
+  if (!gp) { requestAnimationFrame(gpLoop); return; }
+
+  var lx = applyDeadzone(gp.axes[0] || 0);
+  var ly = applyDeadzone(gp.axes[1] || 0);
+  var rx = applyDeadzone(gp.axes[2] || 0);
+  var ry = applyDeadzone(gp.axes[3] || 0);
+
+  var lb = gp.buttons[4] ? gp.buttons[4].value : 0;
+  var rb = gp.buttons[5] ? gp.buttons[5].value : 0;
+  var rollFromBumpers = (rb - lb) * 25;
+
+  var lt = gp.buttons[6] ? gp.buttons[6].value : 0;
+  var rt = gp.buttons[7] ? gp.buttons[7].value : 0;
+
+  var pitchVal = Math.round(ly * 25);
+  var yawVal = Math.round(lx * 30);
+  var rollVal = Math.round(rollFromBumpers);
+  var bodyVal = Math.round(rx * 20);
+
+  var antBoth = Math.round(ry * 100);
+  var antLVal = antBoth - Math.round(lt * 100);
+  var antRVal = antBoth - Math.round(rt * 100);
+  antLVal = Math.max(-100, Math.min(100, antLVal));
+  antRVal = Math.max(-100, Math.min(100, antRVal));
+
+  setSlider('pitch', pitchVal);
+  setSlider('yaw', yawVal);
+  setSlider('roll', rollVal);
+  setSlider('bodyYaw', bodyVal);
+  setSlider('antL', antLVal);
+  setSlider('antR', antRVal);
+
+  document.getElementById('gpDotL').style.left = (50 + lx * 40) + '%';
+  document.getElementById('gpDotL').style.top = (50 + ly * 40) + '%';
+  document.getElementById('gpDotR').style.left = (50 + rx * 40) + '%';
+  document.getElementById('gpDotR').style.top = (50 + ry * 40) + '%';
+  document.getElementById('gpLT').style.width = (lt * 100) + '%';
+  document.getElementById('gpRT').style.width = (rt * 100) + '%';
+
+  gpDirty = true;
+  if (!gpSendTimer) {
+    gpSendTimer = setTimeout(function() {
+      if (gpDirty) { sendPose(); gpDirty = false; }
+      gpSendTimer = null;
+    }, 100);
+  }
+
+  var btns = {};
+  for (var i = 0; i < gp.buttons.length; i++) {
+    btns[i] = gp.buttons[i].pressed;
+  }
+  function justPressed(idx) { return btns[idx] && !gpPrevButtons[idx]; }
+
+  if (justPressed(0)) sendExpr('joy');
+  if (justPressed(1)) sendExpr('sadness');
+  if (justPressed(2)) sendExpr('surprise');
+  if (justPressed(3)) sendExpr('neutral');
+  if (justPressed(12)) sendAction('greet');
+  if (justPressed(13)) sendAction('bow');
+  if (justPressed(14)) sendAction('shake');
+  if (justPressed(15)) sendAction('nod');
+  if (justPressed(9)) resetPose();
+  if (justPressed(8)) sendAction('dance');
+  if (justPressed(10)) sendAction('celebrate');
+  if (justPressed(11)) sendAction('wiggle');
+
+  gpPrevButtons = btns;
+  requestAnimationFrame(gpLoop);
+}
+
+// ── Init ───────────────────────────────────────────────────────────
+checkConnection();
+setInterval(checkConnection, 5000);
+
+(function() {
+  var gps = navigator.getGamepads ? navigator.getGamepads() : [];
+  for (var i = 0; i < gps.length; i++) {
+    if (gps[i]) {
+      gpConnected = true;
+      gpIndex = gps[i].index;
+      document.getElementById('gpBadge').className = 'gp-badge connected';
+      document.getElementById('gpText').textContent = gps[i].id.substring(0, 30);
+      requestAnimationFrame(gpLoop);
+      break;
+    }
+  }
+})();
+</script>
+{% endblock %}

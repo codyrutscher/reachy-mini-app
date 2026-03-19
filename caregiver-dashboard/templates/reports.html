@@ -12,7 +12,7 @@
   .summary-row { display: flex; gap: 12px; margin-bottom: 6px; }
   .summary-key { font-size: 13px; color: var(--muted); min-width: 140px; }
   .summary-val { font-size: 13px; font-weight: 500; }
-  .report-item { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; }
+  .report-item { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; border-left: 4px solid var(--muted); }
   .report-date { font-size: 12px; color: var(--blue); font-weight: 600; margin-bottom: 4px; }
   .report-text { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
   .vitals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -20,9 +20,39 @@
   .vital-val { font-size: 22px; font-weight: 700; }
   .vital-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
   .chart-spinner { display:flex; align-items:center; justify-content:center; padding:30px; }
-.chart-spinner::after { content:''; width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; }
-@keyframes spin { to { transform:rotate(360deg); } }
-
+  .chart-spinner::after { content:''; width:24px; height:24px; border:3px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .tab-bar { display:flex; gap:4px; margin-bottom:18px; }
+  .tab-btn { padding:8px 18px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer;
+    background:transparent; border:1px solid var(--border); color:var(--muted); transition:all 0.2s; }
+  .tab-btn.active { background:var(--blue); border-color:var(--blue); color:white; }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+  /* Doctor report styles */
+  .dr-report { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+  .dr-header { border-bottom: 2px solid var(--blue); padding-bottom: 14px; margin-bottom: 18px; }
+  .dr-title { font-size: 18px; font-weight: 700; }
+  .dr-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .dr-section { margin-bottom: 20px; }
+  .dr-section-title { font-size: 14px; font-weight: 600; color: var(--blue); margin-bottom: 10px;
+    padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .dr-row { display: flex; gap: 12px; margin-bottom: 5px; }
+  .dr-key { font-size: 13px; color: var(--muted); min-width: 160px; }
+  .dr-val { font-size: 13px; font-weight: 500; }
+  .dr-alert-row { padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 12px; }
+  .dr-alert-high { background: rgba(239,68,68,0.1); border-left: 3px solid var(--red); }
+  .dr-alert-normal { background: rgba(59,130,246,0.1); border-left: 3px solid var(--blue); }
+  .dr-mood-bar { display:flex; height:22px; border-radius:6px; overflow:hidden; margin-bottom:8px; }
+  .dr-mood-seg { display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:white; min-width:20px; }
+  .dr-print-only { display:none; }
+  @media print {
+    .nav, .tab-bar, .page-header, .no-print { display:none !important; }
+    .dr-report { border:none; padding:0; }
+    .dr-print-only { display:block; }
+    body { background:white; color:black; }
+    .dr-section-title { color:#1e40af; }
+    .dr-key { color:#666; }
+  }
   @media (max-width: 800px) { .report-grid { grid-template-columns: 1fr; } .vitals-grid { grid-template-columns: 1fr 1fr; } }
 </style>
 {% endblock %}
@@ -30,181 +60,288 @@
 <div class="page">
   <div class="page-header">
     <div>
-      <div class="page-title">📊 Reports & Analytics</div>
-      <div class="page-subtitle">Patient trends, mood analytics, and care summaries</div>
+      <div class="page-title">&#x1F4CA; Reports & Analytics</div>
+      <div class="page-subtitle">Patient trends, mood analytics, and clinical reports</div>
     </div>
     <div style="display:flex;gap:8px;">
-      <button class="btn btn-ghost" onclick="exportCSV()">📥 Export CSV</button>
+      <button class="btn btn-ghost" onclick="exportCSV()">&#x1F4E5; Export CSV</button>
       <button class="btn btn-primary" onclick="genReport()">Generate Today's Report</button>
     </div>
   </div>
 
-  <div class="grid-4" id="summaryStats" style="margin-bottom:18px;"></div>
+  <div class="tab-bar no-print">
+    <button class="tab-btn active" onclick="switchTab('daily')">&#x1F4CB; Daily Reports</button>
+    <button class="tab-btn" onclick="switchTab('doctor')">&#x1F3E5; Doctor Report</button>
+  </div>
 
-  <div class="report-grid">
-    <div class="chart-card">
-      <div class="chart-title">😊 Mood Distribution (Today)</div>
-      <div id="moodChart"></div>
+  <!-- Daily Reports Tab -->
+  <div id="tab-daily" class="tab-panel active">
+    <div class="grid-4" id="summaryStats" style="margin-bottom:18px;"></div>
+    <div class="report-grid">
+      <div class="chart-card">
+        <div class="chart-title">&#x1F60A; Mood Distribution (Today)</div>
+        <div id="moodChart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">&#x1F48A; Medication Adherence</div>
+        <div id="medChart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">&#x1F4C8; Activity Breakdown</div>
+        <div id="activityChart"></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">&#x1FA7A; Latest Vitals</div>
+        <div id="vitalsChart"></div>
+      </div>
     </div>
-    <div class="chart-card">
-      <div class="chart-title">💊 Medication Adherence</div>
-      <div id="medChart"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">📈 Activity Breakdown</div>
-      <div id="activityChart"></div>
-    </div>
-    <div class="chart-card">
-      <div class="chart-title">🩺 Latest Vitals</div>
-      <div id="vitalsChart"></div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header">
+        <div class="card-title">&#x1F4DD; Generated Reports</div>
+      </div>
+      <div id="reportList"></div>
+      <div class="empty" id="reportEmpty"><div class="empty-icon">&#x1F4DD;</div><p>No reports yet. Click "Generate Today's Report" to create one.</p></div>
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:16px;">
-    <div class="card-header">
-      <div class="card-title">📝 Generated Reports</div>
+  <!-- Doctor Report Tab -->
+  <div id="tab-doctor" class="tab-panel">
+    <div style="display:flex;gap:8px;margin-bottom:16px;" class="no-print">
+      <select id="drDays" class="form-input" style="width:140px;">
+        <option value="7">Last 7 days</option>
+        <option value="14">Last 14 days</option>
+        <option value="30">Last 30 days</option>
+      </select>
+      <button class="btn btn-primary" onclick="loadDoctorReport()">&#x1F3E5; Generate Report</button>
+      <button class="btn btn-ghost" onclick="window.print()">&#x1F5A8; Print / PDF</button>
     </div>
-    <div id="reportList"></div>
-    <div class="empty" id="reportEmpty"><div class="empty-icon">📝</div><p>No reports yet. Click "Generate Today's Report" to create one.</p></div>
+    <div id="doctorReport"></div>
   </div>
 </div>
 {% endblock %}
 {% block extra_js %}
 <script>
-const MOOD_COLORS={joy:'#22c55e',sadness:'#3b82f6',anger:'#ef4444',fear:'#a855f7',surprise:'#eab308',neutral:'#6b7280',disgust:'#f97316'};
+var MOOD_COLORS={joy:'#22c55e',sadness:'#3b82f6',anger:'#ef4444',fear:'#a855f7',surprise:'#eab308',neutral:'#6b7280',disgust:'#f97316'};
+
+function switchTab(tab){
+  document.querySelectorAll('.tab-btn').forEach(function(b,i){b.classList.toggle('active',i===(tab==='daily'?0:1));});
+  document.getElementById('tab-daily').classList.toggle('active',tab==='daily');
+  document.getElementById('tab-doctor').classList.toggle('active',tab==='doctor');
+  if(tab==='doctor'&&!document.getElementById('doctorReport').innerHTML) loadDoctorReport();
+}
 
 async function loadAll(){
   ['moodChart','medChart','activityChart','vitalsChart'].forEach(function(id){
-  document.getElementById(id).innerHTML='<div class="chart-spinner"></div>';
+    document.getElementById(id).innerHTML='<div class="chart-spinner"></div>';
   });
-  const [moods,meds,activities,vitals,reports]=await Promise.all([
-    fetch('/api/mood-history').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/med-log/today').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/activity').then(r=>r.json()).catch(()=>[]),
-    fetch('/api/vitals/latest').then(r=>r.json()).catch(()=>({})),
-    fetch('/api/reports').then(r=>r.json()).catch(()=>[]),
+  var results=await Promise.all([
+    fetch('/api/mood-history').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/med-log/today').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/activity').then(function(r){return r.json();}).catch(function(){return [];}),
+    fetch('/api/vitals/latest').then(function(r){return r.json();}).catch(function(){return {};}),
+    fetch('/api/reports').then(function(r){return r.json();}).catch(function(){return [];})
   ]);
-  renderMoodChart(moods);
-  renderMedChart(meds);
-  renderActivityChart(activities);
-  renderVitals(vitals);
-  renderReports(reports);
-  renderSummary(moods,meds,activities);
+  renderMoodChart(results[0]);
+  renderMedChart(results[1]);
+  renderActivityChart(results[2]);
+  renderVitals(results[3]);
+  renderReports(results[4]);
+  renderSummary(results[0],results[1],results[2]);
 }
 
 function renderMoodChart(moods){
-  const el=document.getElementById('moodChart');
+  var el=document.getElementById('moodChart');
   if(!moods||!moods.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No mood data yet.</div>';return;}
-  const counts={};
-  moods.forEach(m=>{const mood=m.mood||'neutral';counts[mood]=(counts[mood]||0)+1;});
-  const max=Math.max(...Object.values(counts),1);
-  el.innerHTML=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([mood,cnt])=>{
-    const pct=Math.round(cnt/max*100);
-    const color=MOOD_COLORS[mood]||'#6b7280';
-    return `<div class="chart-bar">
-      <div class="chart-label">${mood}</div>
-      <div class="chart-fill" style="width:${pct}%;background:${color};"></div>
-      <div class="chart-val">${cnt}</div>
-    </div>`;
+  var counts={};
+  moods.forEach(function(m){var mood=m.mood||'neutral';counts[mood]=(counts[mood]||0)+1;});
+  var max=Math.max.apply(null,Object.values(counts).concat([1]));
+  el.innerHTML=Object.entries(counts).sort(function(a,b){return b[1]-a[1];}).map(function(e){
+    var pct=Math.round(e[1]/max*100);
+    var color=MOOD_COLORS[e[0]]||'#6b7280';
+    return '<div class="chart-bar"><div class="chart-label">'+e[0]+'</div><div class="chart-fill" style="width:'+pct+'%;background:'+color+';"></div><div class="chart-val">'+e[1]+'</div></div>';
   }).join('');
 }
 
 function renderMedChart(meds){
-  const el=document.getElementById('medChart');
+  var el=document.getElementById('medChart');
   if(!meds||!meds.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No medication logs today.</div>';return;}
-  const counts={taken:0,missed:0,late:0,skipped:0};
-  meds.forEach(m=>{const s=m.status||'taken';counts[s]=(counts[s]||0)+1;});
-  const total=Object.values(counts).reduce((a,b)=>a+b,0)||1;
-  const colors={taken:'#22c55e',missed:'#ef4444',late:'#f97316',skipped:'#6b7280'};
-  el.innerHTML=Object.entries(counts).filter(([,v])=>v>0).map(([status,cnt])=>{
-    const pct=Math.round(cnt/total*100);
-    return `<div class="chart-bar">
-      <div class="chart-label">${status}</div>
-      <div class="chart-fill" style="width:${pct}%;background:${colors[status]||'#6b7280'};"></div>
-      <div class="chart-val">${cnt} (${pct}%)</div>
-    </div>`;
+  var counts={taken:0,missed:0,late:0,skipped:0};
+  meds.forEach(function(m){var s=m.status||'taken';counts[s]=(counts[s]||0)+1;});
+  var total=Object.values(counts).reduce(function(a,b){return a+b;},0)||1;
+  var colors={taken:'#22c55e',missed:'#ef4444',late:'#f97316',skipped:'#6b7280'};
+  el.innerHTML=Object.entries(counts).filter(function(e){return e[1]>0;}).map(function(e){
+    var pct=Math.round(e[1]/total*100);
+    return '<div class="chart-bar"><div class="chart-label">'+e[0]+'</div><div class="chart-fill" style="width:'+pct+'%;background:'+(colors[e[0]]||'#6b7280')+';"></div><div class="chart-val">'+e[1]+' ('+pct+'%)</div></div>';
   }).join('');
 }
 
 function renderActivityChart(activities){
-  const el=document.getElementById('activityChart');
+  var el=document.getElementById('activityChart');
   if(!activities||!activities.length){el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No activity data yet.</div>';return;}
-  const counts={};
-  activities.slice(0,50).forEach(a=>{const act=a.action||'other';counts[act]=(counts[act]||0)+1;});
-  const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const max=Math.max(...sorted.map(s=>s[1]),1);
-  const colors=['#3b82f6','#22c55e','#a855f7','#f97316','#eab308','#06b6d4','#ef4444','#6b7280'];
-  el.innerHTML=sorted.map(([action,cnt],i)=>{
-    const pct=Math.round(cnt/max*100);
-    return `<div class="chart-bar">
-      <div class="chart-label" style="width:100px;">${action.replace(/_/g,' ')}</div>
-      <div class="chart-fill" style="width:${pct}%;background:${colors[i%colors.length]};"></div>
-      <div class="chart-val">${cnt}</div>
-    </div>`;
+  var counts={};
+  activities.slice(0,50).forEach(function(a){var act=a.action||'other';counts[act]=(counts[act]||0)+1;});
+  var sorted=Object.entries(counts).sort(function(a,b){return b[1]-a[1];}).slice(0,8);
+  var max=Math.max.apply(null,sorted.map(function(s){return s[1];}).concat([1]));
+  var colors=['#3b82f6','#22c55e','#a855f7','#f97316','#eab308','#06b6d4','#ef4444','#6b7280'];
+  el.innerHTML=sorted.map(function(e,i){
+    var pct=Math.round(e[1]/max*100);
+    return '<div class="chart-bar"><div class="chart-label" style="width:100px;">'+e[0].replace(/_/g,' ')+'</div><div class="chart-fill" style="width:'+pct+'%;background:'+colors[i%colors.length]+';"></div><div class="chart-val">'+e[1]+'</div></div>';
   }).join('');
 }
 
 function renderVitals(vitals){
-  const el=document.getElementById('vitalsChart');
+  var el=document.getElementById('vitalsChart');
   if(!vitals||(!vitals.heart_rate&&!vitals.spo2&&!vitals.temperature)){
     el.innerHTML='<div style="color:var(--muted);font-size:13px;padding:10px;">No vitals data available.</div>';return;
   }
-  const items=[];
+  var items=[];
   if(vitals.heart_rate) items.push({val:vitals.heart_rate+' bpm',label:'Heart Rate',color:vitals.heart_rate>100||vitals.heart_rate<50?'var(--red)':'var(--green)'});
-  if(vitals.spo2) items.push({val:vitals.spo2+'%',label:'SpO₂',color:vitals.spo2<90?'var(--red)':'var(--green)'});
+  if(vitals.spo2) items.push({val:vitals.spo2+'%',label:'SpO2',color:vitals.spo2<90?'var(--red)':'var(--green)'});
   if(vitals.bp_systolic) items.push({val:vitals.bp_systolic+'/'+vitals.bp_diastolic,label:'Blood Pressure',color:'var(--blue)'});
-  if(vitals.temperature) items.push({val:vitals.temperature+'°F',label:'Temperature',color:vitals.temperature>100.4?'var(--red)':'var(--green)'});
-  el.innerHTML='<div class="vitals-grid">'+items.map(v=>
-    `<div class="vital-item"><div class="vital-val" style="color:${v.color}">${v.val}</div><div class="vital-label">${v.label}</div></div>`
-  ).join('')+'</div>';
-  if(vitals.time) el.innerHTML+=`<div style="font-size:11px;color:var(--muted);margin-top:8px;">Last reading: ${vitals.time}</div>`;
+  if(vitals.temperature) items.push({val:vitals.temperature+'F',label:'Temperature',color:vitals.temperature>100.4?'var(--red)':'var(--green)'});
+  el.innerHTML='<div class="vitals-grid">'+items.map(function(v){
+    return '<div class="vital-item"><div class="vital-val" style="color:'+v.color+'">'+v.val+'</div><div class="vital-label">'+v.label+'</div></div>';
+  }).join('')+'</div>';
+  if(vitals.time) el.innerHTML+='<div style="font-size:11px;color:var(--muted);margin-top:8px;">Last reading: '+vitals.time+'</div>';
 }
 
 function renderReports(reports){
-  const el=document.getElementById('reportList');
-  const empty=document.getElementById('reportEmpty');
+  var el=document.getElementById('reportList');
+  var empty=document.getElementById('reportEmpty');
   if(!reports||!reports.length){el.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
-  el.innerHTML=reports.map(r=>
-    `<div class="report-item">
-      <div class="report-date">📅 ${r.date||'Today'}</div>
-      <div class="report-text">${r.report||r.text||'No content'}</div>
-    </div>`
-  ).join('');
+  el.innerHTML=reports.map(function(r){
+    var text=(r.report||r.text||'').toLowerCase();
+    var borderColor='var(--muted)';
+    if(text.match(/joy|happy|great|good|positive|smile/)) borderColor='var(--green)';
+    else if(text.match(/sad|down|low|cry|depress/)) borderColor='var(--blue)';
+    else if(text.match(/anger|angry|agitat|frustrat/)) borderColor='var(--red)';
+    else if(text.match(/fear|anxious|anxiety|worried|scare/)) borderColor='var(--purple)';
+    else if(text.match(/alert|emergency|crisis|fall|critical/)) borderColor='var(--orange)';
+    return '<div class="report-item" style="border-left-color:'+borderColor+'"><div class="report-date">&#x1F4C5; '+(r.date||'Today')+'</div><div class="report-text">'+(r.report||r.text||'No content')+'</div></div>';
+  }).join('');
 }
 
 function renderSummary(moods,meds,activities){
-  const el=document.getElementById('summaryStats');
-  const moodCount=moods?moods.length:0;
-  const medsTaken=meds?meds.filter(m=>m.status==='taken').length:0;
-  const medsTotal=meds?meds.length:0;
-  const actCount=activities?activities.length:0;
-  const adherence=medsTotal>0?Math.round(medsTaken/medsTotal*100):0;
+  var el=document.getElementById('summaryStats');
+  var moodCount=moods?moods.length:0;
+  var medsTaken=meds?meds.filter(function(m){return m.status==='taken';}).length:0;
+  var medsTotal=meds?meds.length:0;
+  var actCount=activities?activities.length:0;
+  var adherence=medsTotal>0?Math.round(medsTaken/medsTotal*100):0;
   el.innerHTML=[
-    {icon:'😊',num:moodCount,label:'Mood Readings',color:'var(--blue)'},
-    {icon:'💊',num:adherence+'%',label:'Med Adherence',color:adherence>=80?'var(--green)':'var(--orange)'},
-    {icon:'📋',num:actCount,label:'Activities Logged',color:'var(--purple)'},
-    {icon:'🩺',num:medsTotal,label:'Meds Scheduled',color:'var(--cyan)'},
-  ].map(s=>`<div class="stat">
-    <div class="stat-icon">${s.icon}</div>
-    <div class="stat-num" style="color:${s.color}">${s.num}</div>
-    <div class="stat-label">${s.label}</div></div>`).join('');
+    {icon:'&#x1F60A;',num:moodCount,label:'Mood Readings',color:'var(--blue)'},
+    {icon:'&#x1F48A;',num:adherence+'%',label:'Med Adherence',color:adherence>=80?'var(--green)':'var(--orange)'},
+    {icon:'&#x1F4CB;',num:actCount,label:'Activities Logged',color:'var(--purple)'},
+    {icon:'&#x1FA7A;',num:medsTotal,label:'Meds Scheduled',color:'var(--cyan)'},
+  ].map(function(s){return '<div class="stat"><div class="stat-icon">'+s.icon+'</div><div class="stat-num" style="color:'+s.color+'">'+s.num+'</div><div class="stat-label">'+s.label+'</div></div>';}).join('');
 }
 
 async function genReport(){
-  const btn=event.target;btn.disabled=true;btn.textContent='Generating...';
-  try{
-    await fetch('/api/reports/generate',{method:'POST'});
-    await loadAll();
-  }catch(e){alert('Failed to generate report');}
+  var btn=event.target;btn.disabled=true;btn.textContent='Generating...';
+  try{ await fetch('/api/reports/generate',{method:'POST'}); await loadAll(); }
+  catch(e){ alert('Failed to generate report'); }
   btn.disabled=false;btn.textContent='Generate Today\'s Report';
 }
+function exportCSV(){ window.location='/api/export/csv'; }
 
-function exportCSV(){
-  window.location='/api/export/csv';
+
+/* Doctor Report */
+async function loadDoctorReport(){
+  var el=document.getElementById('doctorReport');
+  el.innerHTML='<div class="chart-spinner"></div>';
+  var days=document.getElementById('drDays').value;
+  try{var r=await fetch('/api/doctor-report?days='+days);var d=await r.json();renderDoctorReport(d);}
+  catch(e){el.innerHTML='<div class="empty"><p>Failed to generate report.</p></div>';}
 }
 
-onSSE('status',()=>loadAll());
+function drRow(k,v){return '<div class="dr-row"><div class="dr-key">'+k+'</div><div class="dr-val">'+v+'</div></div>';}
+
+function renderDoctorReport(d){
+  var el=document.getElementById('doctorReport');
+  var pName=(d.profile&&(d.profile.preferred_name||d.profile.name))||'Patient';
+  var ss=d.session_stats||{}, md=d.mood_distribution||{}, mdKeys=Object.keys(md);
+  var as=d.alert_summary||{}, cs=d.cognitive_stats||{}, ma=d.med_adherence||{};
+  var h='<div class="dr-report">';
+  h+='<div class="dr-header"><div class="dr-title">Clinical Summary Report</div>';
+  h+='<div class="dr-meta">Patient: '+pName+' | Period: Last '+d.period_days+' days | Generated: '+d.generated+'</div></div>';
+
+  h+='<div class="dr-section"><div class="dr-section-title">Engagement Overview</div>';
+  h+=drRow('Total sessions',ss.total_sessions||0)+drRow('Total interactions',ss.total_interactions||0);
+  h+=drRow('Total conversation time',(ss.total_duration_minutes||0)+' min');
+  h+=drRow('Avg session duration',(ss.avg_duration_minutes||0)+' min');
+  h+=drRow('Conversation streak',(d.streak||0)+' days')+drRow('Known patient facts',d.facts_count||0);
+  h+='</div>';
+
+  if(mdKeys.length){
+    h+='<div class="dr-section"><div class="dr-section-title">Mood Analysis</div><div class="dr-mood-bar">';
+    mdKeys.forEach(function(m){var c=MOOD_COLORS[m]||'#6b7280',p=md[m].pct;
+      h+='<div class="dr-mood-seg" style="width:'+p+'%;background:'+c+';" title="'+m+': '+p+'%">'+(p>=5?m:'')+'</div>';});
+    h+='</div>';
+    mdKeys.forEach(function(m){h+=drRow(m,md[m].count+' readings ('+md[m].pct+'%)');});
+    h+='</div>';
+  }
+
+  var aKeys=Object.keys(as);
+  if(aKeys.length){
+    h+='<div class="dr-section"><div class="dr-section-title">Alerts Summary</div>';
+    aKeys.sort(function(a,b){return as[b]-as[a];}).forEach(function(t){
+      var cls=t.match(/CRISIS|EMERGENCY|SUNDOWNING|WANDERING/)?'dr-alert-high':'dr-alert-normal';
+      h+='<div class="dr-alert-row '+cls+'">'+t.replace(/_/g,' ')+': '+as[t]+'</div>';});
+    h+='</div>';
+  }
+
+  if(cs.sessions){
+    h+='<div class="dr-section"><div class="dr-section-title">Cognitive Assessment</div>';
+    h+=drRow('Game sessions',cs.sessions)+drRow('Average score',cs.avg_score+'%')+drRow('Latest score',cs.latest_score+'%');
+    h+='</div>';
+  }
+
+  if(ma.total){
+    h+='<div class="dr-section"><div class="dr-section-title">Medication Adherence</div>';
+    h+=drRow('Doses taken',ma.taken+' / '+ma.total)+drRow('Adherence rate',ma.pct+'%');
+    var ac=ma.pct>=80?'var(--green)':ma.pct>=50?'var(--orange)':'var(--red)';
+    h+='<div style="height:8px;background:var(--card2);border-radius:4px;margin-top:6px;"><div style="height:100%;width:'+ma.pct+'%;background:'+ac+';border-radius:4px;"></div></div></div>';
+  }
+
+  var vit=d.vitals||[];
+  if(vit.length){
+    h+='<div class="dr-section"><div class="dr-section-title">Vitals</div><div class="vitals-grid">';
+    var lv=vit[0];
+    if(lv.heart_rate) h+='<div class="vital-item"><div class="vital-val">'+lv.heart_rate+'</div><div class="vital-label">HR (bpm)</div></div>';
+    if(lv.spo2) h+='<div class="vital-item"><div class="vital-val">'+lv.spo2+'%</div><div class="vital-label">SpO2</div></div>';
+    if(lv.bp_systolic) h+='<div class="vital-item"><div class="vital-val">'+lv.bp_systolic+'/'+lv.bp_diastolic+'</div><div class="vital-label">BP</div></div>';
+    if(lv.temperature) h+='<div class="vital-item"><div class="vital-val">'+lv.temperature+'</div><div class="vital-label">Temp (F)</div></div>';
+    h+='</div>'+drRow('Readings in period',vit.length)+'</div>';
+  }
+
+  var sess=d.sessions||[];
+  if(sess.length){
+    h+='<div class="dr-section"><div class="dr-section-title">Session Details</div>';
+    sess.forEach(function(s){
+      var topics=(s.topics_discussed||[]).join(', ')||'general', summary=s.summary_text||'';
+      h+='<div class="report-item" style="border-left-color:var(--blue);"><div class="report-date">'+(s.created_at||'Session')+'</div>';
+      h+='<div style="font-size:12px;color:var(--muted);margin-bottom:4px;">'+s.interactions+' interactions | '+(s.duration_minutes||0)+' min | mood: '+(s.dominant_mood||'?')+' | topics: '+topics+'</div>';
+      if(summary) h+='<div class="report-text" style="font-size:12px;">'+summary+'</div>';
+      h+='</div>';});
+    h+='</div>';
+  }
+
+  var wk=d.weekly_reports||[];
+  if(wk.length){
+    h+='<div class="dr-section"><div class="dr-section-title">AI Weekly Summaries</div>';
+    wk.forEach(function(w){
+      h+='<div class="report-item" style="border-left-color:var(--purple);"><div class="report-date">'+(w.week_start||'')+' to '+(w.week_end||'')+'</div>';
+      h+='<div class="report-text" style="font-size:12px;">'+(w.summary||w.report||'')+'</div></div>';});
+    h+='</div>';
+  }
+
+  h+='<div style="text-align:center;font-size:11px;color:var(--muted);margin-top:20px;padding-top:12px;border-top:1px solid var(--border);">Generated by Reachy Care Dashboard | '+d.generated+'</div>';
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+onSSE('status',function(){loadAll();});
 loadAll();
 </script>
 {% endblock %}
