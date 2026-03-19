@@ -3,29 +3,158 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Login — Reachy Care</title>
+<title>Reachy Care — AI-Powered Companion for Elderly Care</title>
 <style>
-  :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --text:#e4e4e7; --muted:#8b8d97; --blue:#3b82f6; --input-bg:#252836; --red:#ef4444; }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; display:flex; align-items:center; justify-content:center; }
-  .login-box { 
-    background:var(--card); border:1px solid var(--border); border-radius:16px; padding:40px; width:380px; text-align:center; animation: fadeIn 0.5s ease;
+  :root {
+    --bg: #0a0b10; --bg2: #0f1117; --card: #161822; --card2: #1c1f2e;
+    --border: #252840; --text: #e4e4e7; --muted: #8b8d97;
+    --blue: #3b82f6; --blue2: #2563eb; --purple: #8b5cf6;
+    --green: #22c55e; --pink: #ec4899; --cyan: #06b6d4;
+    --input-bg: #1a1d2a; --red: #ef4444;
   }
-  .login-box h1 { font-size:24px; margin-bottom:6px; }
-  .login-box h1 span { color:var(--blue); }
-  .login-box p { font-size:13px; color:var(--muted); margin-bottom:24px; }
-  .form-group { margin-bottom:14px; text-align:left; }
-  .form-label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
-  .form-input { width:100%; background:var(--input-bg); border:1px solid var(--border); color:var(--text); padding:10px 14px; border-radius:8px; font-size:14px; outline:none; }
-  .form-input:focus { border-color:var(--blue); }
-  .btn { width:100%; padding:10px; background:var(--blue); border:none; color:white; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; margin-top:8px; }
-  .btn:hover { opacity:0.9; }
-  .error { color:var(--red); font-size:13px; margin-top:10px; display:none; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
 
-  @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  /* ── Animated gradient background ── */
+  .bg-glow {
+    position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(circle at 30% 20%, rgba(59,130,246,0.08) 0%, transparent 50%),
+                radial-gradient(circle at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(6,182,212,0.04) 0%, transparent 50%);
+    animation: glowMove 20s ease-in-out infinite;
+    pointer-events: none; z-index: 0;
   }
+  @keyframes glowMove {
+    0%, 100% { transform: translate(0, 0); }
+    33% { transform: translate(2%, -2%); }
+    66% { transform: translate(-2%, 2%); }
+  }
+
+  /* ── Nav ── */
+  .top-nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 16px 40px; display: flex; justify-content: space-between; align-items: center;
+    background: rgba(10,11,16,0.8); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(37,40,64,0.5);
+  }
+  .logo { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .logo span { color: var(--blue); }
+  .nav-cta { padding: 8px 20px; background: var(--blue); border: none; color: white;
+    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .nav-cta:hover { background: var(--blue2); }
+
+  /* ── Hero ── */
+  .hero {
+    position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; padding: 120px 40px 80px; text-align: center;
+  }
+  .hero-inner { max-width: 800px; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px;
+    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 20px; font-size: 12px; color: var(--blue); font-weight: 500; margin-bottom: 24px;
+  }
+  .hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+  .hero h1 { font-size: 56px; font-weight: 800; line-height: 1.1; margin-bottom: 20px;
+    background: linear-gradient(135deg, var(--text) 0%, var(--blue) 50%, var(--purple) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .hero p { font-size: 18px; color: var(--muted); line-height: 1.6; max-width: 600px; margin: 0 auto 36px; }
+  .hero-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary { padding: 14px 32px; background: var(--blue); border: none; color: white;
+    border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.2s; }
+  .btn-primary:hover { background: var(--blue2); transform: translateY(-1px); box-shadow: 0 8px 30px rgba(59,130,246,0.3); }
+  .btn-secondary { padding: 14px 32px; background: transparent; border: 1px solid var(--border);
+    color: var(--text); border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer; text-decoration: none; transition: all 0.2s; }
+  .btn-secondary:hover { border-color: var(--blue); background: rgba(59,130,246,0.05); }
+
+  /* ── Robot animation ── */
+  .robot-float {
+    font-size: 80px; margin-bottom: 20px; display: inline-block;
+    animation: float 4s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    25% { transform: translateY(-12px) rotate(2deg); }
+    75% { transform: translateY(-6px) rotate(-2deg); }
+  }
+
+  /* ── Features ── */
+  .features {
+    position: relative; z-index: 1; padding: 80px 40px;
+    max-width: 1100px; margin: 0 auto;
+  }
+  .section-label { text-align: center; font-size: 12px; font-weight: 600; color: var(--blue);
+    text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
+  .section-title { text-align: center; font-size: 36px; font-weight: 700; margin-bottom: 12px; }
+  .section-sub { text-align: center; font-size: 15px; color: var(--muted); margin-bottom: 48px; max-width: 500px; margin-left: auto; margin-right: auto; }
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 28px; transition: all 0.3s; position: relative; overflow: hidden;
+  }
+  .feat-card:hover { border-color: rgba(59,130,246,0.3); transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
+  .feat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--blue), transparent); opacity: 0; transition: opacity 0.3s;
+  }
+  .feat-card:hover::before { opacity: 1; }
+  .feat-icon { font-size: 32px; margin-bottom: 14px; display: block; }
+  .feat-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .feat-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+  /* ── Stats ── */
+  .stats {
+    position: relative; z-index: 1; padding: 60px 40px;
+    max-width: 900px; margin: 0 auto;
+  }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .stat-card { text-align: center; padding: 24px; }
+  .stat-num { font-size: 36px; font-weight: 800;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Login section ── */
+  .login-section {
+    position: relative; z-index: 1; padding: 80px 40px;
+    display: flex; justify-content: center;
+  }
+  .login-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
+    padding: 44px; width: 400px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  }
+  .login-card h2 { font-size: 22px; margin-bottom: 6px; }
+  .login-card .sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+  .form-group { margin-bottom: 14px; text-align: left; }
+  .form-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .form-input {
+    width: 100%; background: var(--input-bg); border: 1px solid var(--border);
+    color: var(--text); padding: 11px 14px; border-radius: 10px; font-size: 14px; outline: none; transition: border 0.2s;
+  }
+  .form-input:focus { border-color: var(--blue); }
+  .login-btn {
+    width: 100%; padding: 12px; background: linear-gradient(135deg, var(--blue), var(--purple));
+    border: none; color: white; border-radius: 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer; margin-top: 8px; transition: all 0.2s;
+  }
+  .login-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.3); }
+  .error { color: var(--red); font-size: 13px; margin-top: 10px; display: none; }
+  .remember-row { margin-top: 10px; text-align: left; }
+  .remember-row label { font-size: 12px; color: var(--muted); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+
+  /* ── Footer ── */
+  .footer {
+    position: relative; z-index: 1; text-align: center; padding: 40px;
+    border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
+  }
+
+  /* ── Animations ── */
+  .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
+  .fade-up.visible { opacity: 1; transform: translateY(0); }
 
   @keyframes shake {
     0%, 100% { transform: translateX(0); }
@@ -34,36 +163,151 @@
     45% { transform: translateX(-8px); }
     60% { transform: translateX(6px); }
     75% { transform: translateX(-3px); }
-    90% { transform: translateX(2px); }
   }
   .shake { animation: shake 0.5s ease; }
 
+  @media (max-width: 800px) {
+    .hero h1 { font-size: 36px; }
+    .feat-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    .top-nav { padding: 12px 20px; }
+    .hero, .features, .login-section { padding-left: 20px; padding-right: 20px; }
+  }
 </style>
 </head>
 <body>
-<div class="login-box">
-  <h1>🤖 <span>Reachy</span> Care</h1>
-  <p>Sign in to the caregiver dashboard</p>
-  <div class="form-group">
-    <label class="form-label">Username</label>
-    <input class="form-input" id="username" placeholder="admin" autofocus>
-  </div>
-  <div class="form-group">
-    <label class="form-label">Password</label>
-    <div style="position:relative;">
-      <input class="form-input" id="password" type="password" placeholder="admin" onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:40px;">
-      <button onclick="togglePw()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;" id="eyeBtn" aria-label="Toggle password visibility">👁️</button>
+
+<div class="bg-glow"></div>
+
+<!-- Nav -->
+<nav class="top-nav">
+  <div class="logo">&#x1F916; <span>Reachy</span> Care</div>
+  <a href="#login" class="nav-cta">Sign In</a>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="hero-inner">
+    <div class="robot-float">&#x1F916;</div>
+    <div class="hero-badge"><div class="dot"></div> AI-Powered Companion Robot</div>
+    <h1>Compassionate care, powered by intelligence</h1>
+    <p>Reachy Care pairs an AI companion robot with a real-time caregiver dashboard to support elderly patients with conversation, cognitive games, mood tracking, and safety monitoring.</p>
+    <div class="hero-buttons">
+      <a href="#login" class="btn-primary">Get Started</a>
+      <a href="#features" class="btn-secondary">See Features</a>
     </div>
   </div>
-  <button class="btn" onclick="doLogin()">Sign In</button>
-  <div style="margin-top:10px;text-align:left;">
-    <label style="font-size:12px;color:var(--muted);cursor:pointer;display:flex;align-items:center;gap:6px;">
-      <input type="checkbox" id="rememberMe"> Remember me
-    </label>
+</section>
+
+<!-- Stats -->
+<section class="stats">
+  <div class="stats-grid fade-up">
+    <div class="stat-card">
+      <div class="stat-num">24/7</div>
+      <div class="stat-label">Companion Availability</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">15+</div>
+      <div class="stat-label">Activity Modules</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">Real-time</div>
+      <div class="stat-label">Mood Monitoring</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num">Secure</div>
+      <div class="stat-label">Row-Level Security</div>
+    </div>
   </div>
-  <div class="error" id="error">Invalid username or password</div>
-</div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <div class="section-label">Features</div>
+  <div class="section-title">Everything caregivers need</div>
+  <div class="section-sub">Monitor patients, track moods, manage medications, and let Reachy handle the daily companionship.</div>
+  <div class="feat-grid">
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F4AC;</span>
+      <h3>AI Conversations</h3>
+      <p>Natural voice conversations powered by OpenAI. Reachy remembers preferences, tells jokes, shares stories, and provides emotional support.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F9E0;</span>
+      <h3>Cognitive Games</h3>
+      <p>Memory quizzes, word games, and interactive stories that adapt to the patient's ability level. Scores tracked over time.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F4CA;</span>
+      <h3>Mood Analytics</h3>
+      <p>Real-time mood tracking with facial emotion detection. Weekly reports show trends so caregivers can spot changes early.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F48A;</span>
+      <h3>Medication Tracking</h3>
+      <p>Schedule reminders, log doses, and track compliance. Reachy gently reminds patients when it's time for their medication.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x26A0;&#xFE0F;</span>
+      <h3>Safety Alerts</h3>
+      <p>Automatic alerts for falls, wandering, agitation, and anomalous behavior. Incident reports with severity tracking and resolution workflow.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F3AE;</span>
+      <h3>Teleoperation</h3>
+      <p>Remote control Reachy from anywhere — sliders, keyboard, Xbox controller, or mirror mode that mimics your head movements via webcam.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467;</span>
+      <h3>Family Portal</h3>
+      <p>Family members can send messages, view care plans, and stay connected with their loved one's daily activities and mood.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F4DD;</span>
+      <h3>Shift Handoffs</h3>
+      <p>Auto-generated shift summaries with alerts, mood data, medication status, and caregiver notes. Nothing falls through the cracks.</p>
+    </div>
+    <div class="feat-card fade-up">
+      <span class="feat-icon">&#x1F512;</span>
+      <h3>Role-Based Access</h3>
+      <p>Admin, caregiver, and family roles with row-level security. Everyone sees exactly what they need — nothing more.</p>
+    </div>
+  </div>
+</section>
+
+<!-- Login -->
+<section class="login-section" id="login">
+  <div class="login-card fade-up">
+    <h2>&#x1F44B; Welcome back</h2>
+    <div class="sub">Sign in to the caregiver dashboard</div>
+    <div class="form-group">
+      <label class="form-label">Username</label>
+      <input class="form-input" id="username" placeholder="Enter username" autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div style="position:relative;">
+        <input class="form-input" id="password" type="password" placeholder="Enter password"
+          onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:40px;">
+        <button onclick="togglePw()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;" id="eyeBtn" aria-label="Toggle password visibility">&#x1F441;&#xFE0F;</button>
+      </div>
+    </div>
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+    <div class="remember-row">
+      <label><input type="checkbox" id="rememberMe"> Remember me</label>
+    </div>
+    <div class="error" id="error">Invalid username or password</div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <p>&#x1F916; Reachy Care — Built with Python, Flask, and Reachy Mini SDK</p>
+  <p style="margin-top:6px;">Companion robotics for compassionate elderly care</p>
+</footer>
+
 <script>
+// ── Login ──
 async function doLogin() {
   var u = document.getElementById('username').value.trim();
   var p = document.getElementById('password').value;
@@ -72,18 +316,23 @@ async function doLogin() {
   } else {
     localStorage.removeItem('reachy_username');
   }
-  var res = await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
-  if (res.ok) { window.location.href='/'; }
+  var res = await fetch('/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({username: u, password: p})
+  });
+  if (res.ok) { window.location.href = '/'; }
   else {
-    document.getElementById('error').style.display='block';
-    var box = document.querySelector('.login-box');
-    box.classList.remove('shake');
-    void box.offsetWidth;
-    box.classList.add('shake');
+    document.getElementById('error').style.display = 'block';
+    var card = document.querySelector('.login-card');
+    card.classList.remove('shake');
+    void card.offsetWidth;
+    card.classList.add('shake');
   }
 }
-// Restore saved username on load
-(function(){
+
+// Restore saved username
+(function() {
   var saved = localStorage.getItem('reachy_username');
   if (saved) {
     document.getElementById('username').value = saved;
@@ -91,17 +340,26 @@ async function doLogin() {
     document.getElementById('password').focus();
   }
 })();
+
 function togglePw() {
   var pw = document.getElementById('password');
   var btn = document.getElementById('eyeBtn');
-  if (pw.type === 'password') {
-    pw.type = 'text';
-    btn.textContent = '🙈';
-  } else {
-    pw.type = 'password';
-    btn.textContent = '👁️';
-  }
+  if (pw.type === 'password') { pw.type = 'text'; btn.textContent = '\u{1F648}'; }
+  else { pw.type = 'password'; btn.textContent = '\u{1F441}\uFE0F'; }
 }
+
+// ── Scroll animations ──
+var observer = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.fade-up').forEach(function(el) {
+  observer.observe(el);
+});
 </script>
 </body>
 </html>
