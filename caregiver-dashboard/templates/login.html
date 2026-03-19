@@ -3,335 +3,540 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reachy Care — AI-Powered Companion for Elderly Care</title>
+<title>Reachy Care — AI Companion for Elderly Care</title>
 <style>
   :root {
-    --bg: #0a0b10; --bg2: #0f1117; --card: #161822; --card2: #1c1f2e;
-    --border: #252840; --text: #e4e4e7; --muted: #8b8d97;
-    --blue: #3b82f6; --blue2: #2563eb; --purple: #8b5cf6;
-    --green: #22c55e; --pink: #ec4899; --cyan: #06b6d4;
-    --input-bg: #1a1d2a; --red: #ef4444;
+    --bg: #050508; --bg2: #0a0c14; --card: #0e1018; --card2: #13151f;
+    --border: #1e2030; --text: #d4d4d8; --dim: #71717a; --muted: #52525b;
+    --accent: #6366f1; --accent2: #818cf8; --accent3: #4f46e5;
+    --green: #10b981; --cyan: #22d3ee; --pink: #f472b6; --amber: #fbbf24;
+    --red: #ef4444; --input-bg: #0f1119;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * { margin:0; padding:0; box-sizing:border-box; }
   html { scroll-behavior: smooth; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  body { font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+    background: var(--bg); color: var(--text); overflow-x: hidden; }
 
-  /* ── Animated gradient background ── */
-  .bg-glow {
-    position: fixed; top: -50%; left: -50%; width: 200%; height: 200%;
-    background: radial-gradient(circle at 30% 20%, rgba(59,130,246,0.08) 0%, transparent 50%),
-                radial-gradient(circle at 70% 80%, rgba(139,92,246,0.06) 0%, transparent 50%),
-                radial-gradient(circle at 50% 50%, rgba(6,182,212,0.04) 0%, transparent 50%);
-    animation: glowMove 20s ease-in-out infinite;
-    pointer-events: none; z-index: 0;
-  }
-  @keyframes glowMove {
-    0%, 100% { transform: translate(0, 0); }
-    33% { transform: translate(2%, -2%); }
-    66% { transform: translate(-2%, 2%); }
+  /* ── Particle canvas ── */
+  #particles { position: fixed; top:0; left:0; width:100%; height:100%; z-index:0; pointer-events:none; }
+
+  /* ── Grid overlay ── */
+  .grid-bg {
+    position: fixed; top:0; left:0; width:100%; height:100%; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
   }
 
   /* ── Nav ── */
-  .top-nav {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-    padding: 16px 40px; display: flex; justify-content: space-between; align-items: center;
-    background: rgba(10,11,16,0.8); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(37,40,64,0.5);
+  .nav {
+    position: fixed; top:0; left:0; right:0; z-index:100;
+    padding: 14px 32px; display:flex; justify-content:space-between; align-items:center;
+    background: rgba(5,5,8,0.85); backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(30,32,48,0.6);
   }
-  .logo { font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-  .logo span { color: var(--blue); }
-  .nav-cta { padding: 8px 20px; background: var(--blue); border: none; color: white;
-    border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; }
-  .nav-cta:hover { background: var(--blue2); }
+  .nav-logo { font-size:15px; font-weight:700; letter-spacing:-0.5px; }
+  .nav-logo .rc { color: var(--accent2); }
+  .nav-links { display:flex; gap:24px; align-items:center; }
+  .nav-links a { color: var(--dim); font-size:12px; text-decoration:none; transition: color 0.2s; letter-spacing:0.5px; }
+  .nav-links a:hover { color: var(--text); }
+  .nav-signin {
+    padding: 7px 18px; border: 1px solid var(--accent); color: var(--accent2);
+    border-radius: 6px; font-size:11px; font-weight:600; text-decoration:none;
+    transition: all 0.2s; letter-spacing:0.5px; text-transform:uppercase;
+  }
+  .nav-signin:hover { background: var(--accent); color: white; }
+
+  section { position: relative; z-index:1; }
 
   /* ── Hero ── */
-  .hero {
-    position: relative; z-index: 1; min-height: 100vh; display: flex; align-items: center;
-    justify-content: center; padding: 120px 40px 80px; text-align: center;
+  .hero { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:120px 32px 80px; }
+  .hero-inner { max-width:740px; }
+  .hero-tag {
+    display:inline-block; font-size:10px; letter-spacing:3px; text-transform:uppercase;
+    color: var(--accent2); border: 1px solid rgba(99,102,241,0.3); padding:5px 14px;
+    border-radius:4px; margin-bottom:28px; font-weight:600;
   }
-  .hero-inner { max-width: 800px; }
-  .hero-badge {
-    display: inline-flex; align-items: center; gap: 6px; padding: 6px 16px;
-    background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.2);
-    border-radius: 20px; font-size: 12px; color: var(--blue); font-weight: 500; margin-bottom: 24px;
+  .hero h1 { font-size:52px; font-weight:800; line-height:1.08; letter-spacing:-2px; margin-bottom:24px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .hero h1 .gradient {
+    background: linear-gradient(135deg, var(--accent2) 0%, var(--cyan) 40%, var(--pink) 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
   }
-  .hero-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
-  .hero h1 { font-size: 56px; font-weight: 800; line-height: 1.1; margin-bottom: 20px;
-    background: linear-gradient(135deg, var(--text) 0%, var(--blue) 50%, var(--purple) 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .hero p { font-size: 18px; color: var(--muted); line-height: 1.6; max-width: 600px; margin: 0 auto 36px; }
-  .hero-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .btn-primary { padding: 14px 32px; background: var(--blue); border: none; color: white;
-    border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; text-decoration: none; transition: all 0.2s; }
-  .btn-primary:hover { background: var(--blue2); transform: translateY(-1px); box-shadow: 0 8px 30px rgba(59,130,246,0.3); }
-  .btn-secondary { padding: 14px 32px; background: transparent; border: 1px solid var(--border);
-    color: var(--text); border-radius: 10px; font-size: 15px; font-weight: 500; cursor: pointer; text-decoration: none; transition: all 0.2s; }
-  .btn-secondary:hover { border-color: var(--blue); background: rgba(59,130,246,0.05); }
+  .hero-desc { font-size:14px; color:var(--dim); line-height:1.8; max-width:540px; margin-bottom:40px; }
+  .hero-actions { display:flex; gap:12px; align-items:center; }
+  .btn-main {
+    padding:12px 28px; background:var(--accent); border:none; color:white;
+    border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+    font-family:inherit; transition:all 0.2s; text-decoration:none; display:inline-block;
+  }
+  .btn-main:hover { background:var(--accent3); box-shadow:0 0 30px rgba(99,102,241,0.4); }
+  .btn-ghost {
+    padding:12px 28px; background:transparent; border:1px solid var(--border); color:var(--dim);
+    border-radius:8px; font-size:13px; cursor:pointer; font-family:inherit; transition:all 0.2s;
+    text-decoration:none; display:inline-block;
+  }
+  .btn-ghost:hover { border-color:var(--accent); color:var(--text); }
 
-  /* ── Robot animation ── */
-  .robot-float {
-    font-size: 80px; margin-bottom: 20px; display: inline-block;
-    animation: float 4s ease-in-out infinite;
+  /* ── Terminal demo ── */
+  .terminal-section { padding:60px 32px 100px; display:flex; justify-content:center; }
+  .terminal {
+    width:100%; max-width:700px; background:var(--card); border:1px solid var(--border);
+    border-radius:12px; overflow:hidden; box-shadow:0 40px 80px rgba(0,0,0,0.5);
   }
-  @keyframes float {
-    0%, 100% { transform: translateY(0px) rotate(0deg); }
-    25% { transform: translateY(-12px) rotate(2deg); }
-    75% { transform: translateY(-6px) rotate(-2deg); }
+  .terminal-bar { padding:10px 16px; background:var(--card2); display:flex; gap:7px; align-items:center; border-bottom:1px solid var(--border); }
+  .terminal-dot { width:10px; height:10px; border-radius:50%; }
+  .terminal-dot.r { background:#ff5f57; }
+  .terminal-dot.y { background:#febc2e; }
+  .terminal-dot.g { background:#28c840; }
+  .terminal-title { font-size:11px; color:var(--muted); margin-left:12px; }
+  .terminal-body { padding:20px; font-size:12px; line-height:2; color:var(--dim); min-height:200px; }
+  .terminal-body .prompt { color:var(--green); }
+  .terminal-body .cmd { color:var(--text); }
+  .terminal-body .out { color:var(--dim); }
+  .terminal-body .accent { color:var(--accent2); }
+  .terminal-body .warn { color:var(--amber); }
+  .terminal-body .good { color:var(--green); }
+  .terminal-cursor { display:inline-block; width:7px; height:14px; background:var(--accent2); animation:blink 1s step-end infinite; vertical-align:middle; margin-left:2px; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* ── How it works ── */
+  .how { padding:100px 32px; max-width:900px; margin:0 auto; }
+  .section-tag { font-size:10px; letter-spacing:3px; text-transform:uppercase; color:var(--accent2); font-weight:600; margin-bottom:12px; }
+  .section-h { font-size:32px; font-weight:700; letter-spacing:-1px; margin-bottom:48px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .steps { display:flex; flex-direction:column; gap:0; position:relative; }
+  .steps::before { content:''; position:absolute; left:19px; top:24px; bottom:24px; width:1px; background:var(--border); }
+  .step { display:flex; gap:24px; padding:24px 0; }
+  .step-num {
+    width:40px; height:40px; border-radius:50%; border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700;
+    color:var(--accent2); background:var(--bg); flex-shrink:0; position:relative; z-index:1;
+  }
+  .step-content h3 { font-size:15px; font-weight:600; margin-bottom:6px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .step-content p { font-size:13px; color:var(--dim); line-height:1.7; }
+
+  /* ── Bento grid ── */
+  .bento-section { padding:100px 32px; max-width:1000px; margin:0 auto; }
+  .bento { display:grid; grid-template-columns:repeat(3,1fr); grid-auto-rows:180px; gap:12px; }
+  .bento-card {
+    background:var(--card); border:1px solid var(--border); border-radius:12px; padding:24px;
+    display:flex; flex-direction:column; justify-content:flex-end; position:relative; overflow:hidden;
+    transition:all 0.3s;
+  }
+  .bento-card:hover { border-color:rgba(99,102,241,0.4); transform:translateY(-2px); }
+  .bento-card.span2 { grid-column:span 2; }
+  .bento-card.tall { grid-row:span 2; }
+  .bento-icon { font-size:28px; margin-bottom:10px; }
+  .bento-card h3 { font-size:14px; font-weight:600; margin-bottom:4px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .bento-card p { font-size:11px; color:var(--dim); line-height:1.6; }
+  .bento-glow {
+    position:absolute; top:-50%; right:-50%; width:200%; height:200%;
+    background:radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 60%);
+    pointer-events:none;
   }
 
-  /* ── Features ── */
-  .features {
-    position: relative; z-index: 1; padding: 80px 40px;
-    max-width: 1100px; margin: 0 auto;
+  /* ── Quotes ── */
+  .quotes-section { padding:100px 32px; max-width:800px; margin:0 auto; text-align:center; }
+  .quote-card {
+    background:var(--card); border:1px solid var(--border); border-radius:12px;
+    padding:36px; margin-bottom:16px; text-align:left; position:relative;
   }
-  .section-label { text-align: center; font-size: 12px; font-weight: 600; color: var(--blue);
-    text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
-  .section-title { text-align: center; font-size: 36px; font-weight: 700; margin-bottom: 12px; }
-  .section-sub { text-align: center; font-size: 15px; color: var(--muted); margin-bottom: 48px; max-width: 500px; margin-left: auto; margin-right: auto; }
-  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-  .feat-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-    padding: 28px; transition: all 0.3s; position: relative; overflow: hidden;
-  }
-  .feat-card:hover { border-color: rgba(59,130,246,0.3); transform: translateY(-4px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.3); }
-  .feat-card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, transparent, var(--blue), transparent); opacity: 0; transition: opacity 0.3s;
-  }
-  .feat-card:hover::before { opacity: 1; }
-  .feat-icon { font-size: 32px; margin-bottom: 14px; display: block; }
-  .feat-card h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
-  .feat-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+  .quote-text { font-size:14px; line-height:1.8; color:var(--text); font-style:italic;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin-bottom:12px; }
+  .quote-author { font-size:11px; color:var(--dim); }
+  .quote-author span { color:var(--accent2); }
 
-  /* ── Stats ── */
-  .stats {
-    position: relative; z-index: 1; padding: 60px 40px;
-    max-width: 900px; margin: 0 auto;
+  /* ── Tech stack ── */
+  .stack-section { padding:80px 32px; max-width:700px; margin:0 auto; text-align:center; }
+  .stack-pills { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:24px; }
+  .pill {
+    padding:8px 16px; border:1px solid var(--border); border-radius:6px;
+    font-size:11px; color:var(--dim); transition:all 0.2s;
   }
-  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-  .stat-card { text-align: center; padding: 24px; }
-  .stat-num { font-size: 36px; font-weight: 800;
-    background: linear-gradient(135deg, var(--blue), var(--purple));
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .pill:hover { border-color:var(--accent); color:var(--accent2); }
 
-  /* ── Login section ── */
-  .login-section {
-    position: relative; z-index: 1; padding: 80px 40px;
-    display: flex; justify-content: center;
-  }
+  /* ── Login ── */
+  .login-section { padding:100px 32px; display:flex; justify-content:center; }
   .login-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 20px;
-    padding: 44px; width: 400px; text-align: center;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:40px; width:380px;
   }
-  .login-card h2 { font-size: 22px; margin-bottom: 6px; }
-  .login-card .sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
-  .form-group { margin-bottom: 14px; text-align: left; }
-  .form-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .login-card h2 { font-size:18px; font-weight:700; margin-bottom:4px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  .login-card .sub { font-size:12px; color:var(--dim); margin-bottom:24px; }
+  .form-group { margin-bottom:14px; }
+  .form-label { display:block; font-size:10px; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:1px; font-weight:600; }
   .form-input {
-    width: 100%; background: var(--input-bg); border: 1px solid var(--border);
-    color: var(--text); padding: 11px 14px; border-radius: 10px; font-size: 14px; outline: none; transition: border 0.2s;
+    width:100%; background:var(--input-bg); border:1px solid var(--border);
+    color:var(--text); padding:10px 12px; border-radius:8px; font-size:13px;
+    font-family:inherit; outline:none; transition:border 0.2s;
   }
-  .form-input:focus { border-color: var(--blue); }
+  .form-input:focus { border-color:var(--accent); }
   .login-btn {
-    width: 100%; padding: 12px; background: linear-gradient(135deg, var(--blue), var(--purple));
-    border: none; color: white; border-radius: 10px; font-size: 14px; font-weight: 600;
-    cursor: pointer; margin-top: 8px; transition: all 0.2s;
+    width:100%; padding:11px; background:var(--accent); border:none; color:white;
+    border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;
+    font-family:inherit; margin-top:6px; transition:all 0.2s;
   }
-  .login-btn:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(59,130,246,0.3); }
-  .error { color: var(--red); font-size: 13px; margin-top: 10px; display: none; }
-  .remember-row { margin-top: 10px; text-align: left; }
-  .remember-row label { font-size: 12px; color: var(--muted); cursor: pointer; display: flex; align-items: center; gap: 6px; }
+  .login-btn:hover { background:var(--accent3); }
+  .error { color:var(--red); font-size:12px; margin-top:10px; display:none; }
+  .remember-row { margin-top:10px; }
+  .remember-row label { font-size:11px; color:var(--muted); cursor:pointer; display:flex; align-items:center; gap:6px; }
 
   /* ── Footer ── */
-  .footer {
-    position: relative; z-index: 1; text-align: center; padding: 40px;
-    border-top: 1px solid var(--border); font-size: 12px; color: var(--muted);
-  }
+  .footer { text-align:center; padding:48px 32px; border-top:1px solid var(--border); }
+  .footer p { font-size:11px; color:var(--muted); }
+  .footer a { color:var(--accent2); text-decoration:none; }
 
   /* ── Animations ── */
-  .fade-up { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
-  .fade-up.visible { opacity: 1; transform: translateY(0); }
+  .reveal { opacity:0; transform:translateY(24px); transition:all 0.7s cubic-bezier(0.16,1,0.3,1); }
+  .reveal.visible { opacity:1; transform:translateY(0); }
+  .reveal-delay-1 { transition-delay:0.1s; }
+  .reveal-delay-2 { transition-delay:0.2s; }
+  .reveal-delay-3 { transition-delay:0.3s; }
 
   @keyframes shake {
-    0%, 100% { transform: translateX(0); }
-    15% { transform: translateX(-12px); }
-    30% { transform: translateX(10px); }
-    45% { transform: translateX(-8px); }
-    60% { transform: translateX(6px); }
-    75% { transform: translateX(-3px); }
+    0%,100% { transform:translateX(0); }
+    15% { transform:translateX(-10px); }
+    30% { transform:translateX(8px); }
+    45% { transform:translateX(-6px); }
+    60% { transform:translateX(4px); }
   }
-  .shake { animation: shake 0.5s ease; }
+  .shake { animation:shake 0.4s ease; }
 
-  @media (max-width: 800px) {
-    .hero h1 { font-size: 36px; }
-    .feat-grid { grid-template-columns: 1fr; }
-    .stats-grid { grid-template-columns: repeat(2, 1fr); }
-    .top-nav { padding: 12px 20px; }
-    .hero, .features, .login-section { padding-left: 20px; padding-right: 20px; }
+  @media (max-width:800px) {
+    .hero h1 { font-size:32px; }
+    .bento { grid-template-columns:1fr; }
+    .bento-card.span2 { grid-column:span 1; }
+    .bento-card.tall { grid-row:span 1; }
+    .nav-links a:not(.nav-signin) { display:none; }
+    .hero, section { padding-left:20px; padding-right:20px; }
   }
 </style>
 </head>
 <body>
 
-<div class="bg-glow"></div>
+<canvas id="particles"></canvas>
+<div class="grid-bg"></div>
 
-<!-- Nav -->
-<nav class="top-nav">
-  <div class="logo">&#x1F916; <span>Reachy</span> Care</div>
-  <a href="#login" class="nav-cta">Sign In</a>
+<nav class="nav">
+  <div class="nav-logo"><span class="rc">reachy</span>.care</div>
+  <div class="nav-links">
+    <a href="#how">how it works</a>
+    <a href="#features">features</a>
+    <a href="#stack">stack</a>
+    <a href="#login" class="nav-signin">sign in</a>
+  </div>
 </nav>
 
 <!-- Hero -->
 <section class="hero">
   <div class="hero-inner">
-    <div class="robot-float">&#x1F916;</div>
-    <div class="hero-badge"><div class="dot"></div> AI-Powered Companion Robot</div>
-    <h1>Compassionate care, powered by intelligence</h1>
-    <p>Reachy Care pairs an AI companion robot with a real-time caregiver dashboard to support elderly patients with conversation, cognitive games, mood tracking, and safety monitoring.</p>
-    <div class="hero-buttons">
-      <a href="#login" class="btn-primary">Get Started</a>
-      <a href="#features" class="btn-secondary">See Features</a>
+    <div class="hero-tag">companion robotics for eldercare</div>
+    <h1>Your patient has a <span class="gradient">24/7 companion.</span><br>You have a dashboard.</h1>
+    <p class="hero-desc">Reachy is an AI-powered robot that talks, plays games, tracks moods, and watches for safety events. The dashboard gives caregivers real-time visibility into everything Reachy sees and does.</p>
+    <div class="hero-actions">
+      <a href="#login" class="btn-main">sign in to dashboard</a>
+      <a href="#how" class="btn-ghost">see how it works</a>
     </div>
   </div>
 </section>
 
-<!-- Stats -->
-<section class="stats">
-  <div class="stats-grid fade-up">
-    <div class="stat-card">
-      <div class="stat-num">24/7</div>
-      <div class="stat-label">Companion Availability</div>
+<!-- Terminal demo -->
+<section class="terminal-section">
+  <div class="terminal reveal">
+    <div class="terminal-bar">
+      <div class="terminal-dot r"></div>
+      <div class="terminal-dot y"></div>
+      <div class="terminal-dot g"></div>
+      <div class="terminal-title">reachy-assist &mdash; session log</div>
     </div>
-    <div class="stat-card">
-      <div class="stat-num">15+</div>
-      <div class="stat-label">Activity Modules</div>
+    <div class="terminal-body" id="termBody"></div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how" id="how">
+  <div class="section-tag reveal">How it works</div>
+  <div class="section-h reveal">Three layers, one system.</div>
+  <div class="steps">
+    <div class="step reveal">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>Reachy talks to the patient</h3>
+        <p>Voice conversations powered by OpenAI. Reachy tells jokes, plays memory games, guides meditation, reminds about medications, and detects mood through facial expressions. Everything is logged.</p>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-num">Real-time</div>
-      <div class="stat-label">Mood Monitoring</div>
+    <div class="step reveal">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>Data flows to the dashboard</h3>
+        <p>Conversation logs, mood journals, cognitive scores, sleep patterns, pain reports, and safety alerts stream into a Supabase Postgres database with row-level security. Nothing is lost.</p>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-num">Secure</div>
-      <div class="stat-label">Row-Level Security</div>
+    <div class="step reveal">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>Caregivers see everything</h3>
+        <p>The dashboard shows real-time patient status, mood trends, medication compliance, incident reports, and weekly summaries. Admins can teleoperate Reachy remotely or use mirror mode with their webcam.</p>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Features -->
-<section class="features" id="features">
-  <div class="section-label">Features</div>
-  <div class="section-title">Everything caregivers need</div>
-  <div class="section-sub">Monitor patients, track moods, manage medications, and let Reachy handle the daily companionship.</div>
-  <div class="feat-grid">
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F4AC;</span>
-      <h3>AI Conversations</h3>
-      <p>Natural voice conversations powered by OpenAI. Reachy remembers preferences, tells jokes, shares stories, and provides emotional support.</p>
+<!-- Bento features -->
+<section class="bento-section" id="features">
+  <div class="section-tag reveal">Capabilities</div>
+  <div class="section-h reveal">What Reachy can do.</div>
+  <div class="bento">
+    <div class="bento-card span2 reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F5E3;&#xFE0F;</div>
+      <h3>Natural voice conversations</h3>
+      <p>Real-time speech with OpenAI. Reachy remembers names, favorite topics, and personal stories across sessions. Supports multiple languages.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F9E0;</span>
-      <h3>Cognitive Games</h3>
-      <p>Memory quizzes, word games, and interactive stories that adapt to the patient's ability level. Scores tracked over time.</p>
+    <div class="bento-card tall reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F9E0;</div>
+      <h3>Cognitive games</h3>
+      <p>Word recall, trivia, interactive stories, personal quizzes. Difficulty adapts automatically. Scores tracked over weeks.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F4CA;</span>
-      <h3>Mood Analytics</h3>
-      <p>Real-time mood tracking with facial emotion detection. Weekly reports show trends so caregivers can spot changes early.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F3B5;</div>
+      <h3>Music &amp; singalong</h3>
+      <p>Plays favorites, guides singalongs, creates calm environments with ambient melodies.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F48A;</span>
-      <h3>Medication Tracking</h3>
-      <p>Schedule reminders, log doses, and track compliance. Reachy gently reminds patients when it's time for their medication.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F9D8;</div>
+      <h3>Guided meditation</h3>
+      <p>Breathing exercises, body scans, and gratitude journaling with gentle voice guidance.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x26A0;&#xFE0F;</span>
-      <h3>Safety Alerts</h3>
-      <p>Automatic alerts for falls, wandering, agitation, and anomalous behavior. Incident reports with severity tracking and resolution workflow.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x26A0;&#xFE0F;</div>
+      <h3>Safety monitoring</h3>
+      <p>Fall detection, wandering alerts, agitation tracking. Automatic caregiver notifications.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F3AE;</span>
-      <h3>Teleoperation</h3>
-      <p>Remote control Reachy from anywhere — sliders, keyboard, Xbox controller, or mirror mode that mimics your head movements via webcam.</p>
+    <div class="bento-card span2 reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F3AE;</div>
+      <h3>Remote teleoperation</h3>
+      <p>Control Reachy from the browser with sliders, keyboard, Xbox controller, or mirror mode that tracks your face via webcam and mimics your head movements in real-time.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467;</span>
-      <h3>Family Portal</h3>
-      <p>Family members can send messages, view care plans, and stay connected with their loved one's daily activities and mood.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F4CA;</div>
+      <h3>Weekly reports</h3>
+      <p>Auto-generated summaries: mood distribution, top conversation topics, cognitive trends, medication compliance.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F4DD;</span>
-      <h3>Shift Handoffs</h3>
-      <p>Auto-generated shift summaries with alerts, mood data, medication status, and caregiver notes. Nothing falls through the cracks.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F48A;</div>
+      <h3>Medication reminders</h3>
+      <p>Scheduled reminders with voice prompts. Dose logging and compliance tracking for caregivers.</p>
     </div>
-    <div class="feat-card fade-up">
-      <span class="feat-icon">&#x1F512;</span>
-      <h3>Role-Based Access</h3>
-      <p>Admin, caregiver, and family roles with row-level security. Everyone sees exactly what they need — nothing more.</p>
+    <div class="bento-card reveal">
+      <div class="bento-glow"></div>
+      <div class="bento-icon">&#x1F512;</div>
+      <h3>Role-based access</h3>
+      <p>Admin, caregiver, family roles. Row-level security on every table. JWT-scoped patient data.</p>
     </div>
+  </div>
+</section>
+
+<!-- Quotes -->
+<section class="quotes-section">
+  <div class="section-tag reveal">Built for real care</div>
+  <div class="section-h reveal">Why it matters.</div>
+  <div class="quote-card reveal">
+    <div class="quote-text">"Loneliness is as damaging to health as smoking 15 cigarettes a day. For elderly patients in care facilities, having a consistent, patient companion that never gets tired or frustrated can be transformative."</div>
+    <div class="quote-author">Research context &mdash; <span>U.S. Surgeon General Advisory on Social Isolation, 2023</span></div>
+  </div>
+  <div class="quote-card reveal">
+    <div class="quote-text">"The goal isn't to replace human caregivers. It's to give them superpowers. Reachy handles the 3am check-ins, the repetitive medication reminders, the cognitive exercises &mdash; so nurses can focus on the moments that need a human touch."</div>
+    <div class="quote-author">Design philosophy &mdash; <span>Reachy Care project</span></div>
+  </div>
+</section>
+
+<!-- Tech stack -->
+<section class="stack-section" id="stack">
+  <div class="section-tag reveal">Under the hood</div>
+  <div class="section-h reveal">Built with.</div>
+  <div class="stack-pills reveal">
+    <div class="pill">Python</div>
+    <div class="pill">Flask</div>
+    <div class="pill">OpenAI GPT-4o</div>
+    <div class="pill">OpenAI Realtime API</div>
+    <div class="pill">Supabase</div>
+    <div class="pill">PostgreSQL</div>
+    <div class="pill">Reachy Mini SDK</div>
+    <div class="pill">MuJoCo</div>
+    <div class="pill">MediaPipe</div>
+    <div class="pill">WebSockets</div>
+    <div class="pill">Docker</div>
+    <div class="pill">Railway</div>
+    <div class="pill">bcrypt</div>
+    <div class="pill">Row-Level Security</div>
+    <div class="pill">Gamepad API</div>
+    <div class="pill">Server-Sent Events</div>
   </div>
 </section>
 
 <!-- Login -->
 <section class="login-section" id="login">
-  <div class="login-card fade-up">
-    <h2>&#x1F44B; Welcome back</h2>
-    <div class="sub">Sign in to the caregiver dashboard</div>
+  <div class="login-card reveal">
+    <h2>sign in</h2>
+    <div class="sub">access the caregiver dashboard</div>
     <div class="form-group">
-      <label class="form-label">Username</label>
-      <input class="form-input" id="username" placeholder="Enter username" autofocus>
+      <label class="form-label">username</label>
+      <input class="form-input" id="username" placeholder="enter username" autofocus>
     </div>
     <div class="form-group">
-      <label class="form-label">Password</label>
+      <label class="form-label">password</label>
       <div style="position:relative;">
-        <input class="form-input" id="password" type="password" placeholder="Enter password"
-          onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:40px;">
-        <button onclick="togglePw()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:4px;" id="eyeBtn" aria-label="Toggle password visibility">&#x1F441;&#xFE0F;</button>
+        <input class="form-input" id="password" type="password" placeholder="enter password"
+          onkeydown="if(event.key==='Enter')doLogin()" style="padding-right:36px;">
+        <button onclick="togglePw()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px;" id="eyeBtn" aria-label="Toggle password visibility">&#x1F441;&#xFE0F;</button>
       </div>
     </div>
-    <button class="login-btn" onclick="doLogin()">Sign In</button>
+    <button class="login-btn" onclick="doLogin()">sign in</button>
     <div class="remember-row">
-      <label><input type="checkbox" id="rememberMe"> Remember me</label>
+      <label><input type="checkbox" id="rememberMe"> remember me</label>
     </div>
-    <div class="error" id="error">Invalid username or password</div>
+    <div class="error" id="error">invalid credentials</div>
   </div>
 </section>
 
-<!-- Footer -->
 <footer class="footer">
-  <p>&#x1F916; Reachy Care — Built with Python, Flask, and Reachy Mini SDK</p>
-  <p style="margin-top:6px;">Companion robotics for compassionate elderly care</p>
+  <p>reachy.care &mdash; companion robotics for compassionate eldercare</p>
+  <p style="margin-top:6px;">built with <a href="https://github.com/pollen-robotics" target="_blank" rel="noopener">pollen robotics</a> reachy mini</p>
 </footer>
 
 <script>
+// ── Particles ──
+(function() {
+  var c = document.getElementById('particles');
+  var ctx = c.getContext('2d');
+  var dots = [];
+  function resize() { c.width = window.innerWidth; c.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+  for (var i = 0; i < 60; i++) {
+    dots.push({
+      x: Math.random() * c.width, y: Math.random() * c.height,
+      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+      r: Math.random() * 1.5 + 0.5
+    });
+  }
+  function draw() {
+    ctx.clearRect(0, 0, c.width, c.height);
+    for (var i = 0; i < dots.length; i++) {
+      var d = dots[i];
+      d.x += d.vx; d.y += d.vy;
+      if (d.x < 0) d.x = c.width;
+      if (d.x > c.width) d.x = 0;
+      if (d.y < 0) d.y = c.height;
+      if (d.y > c.height) d.y = 0;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(99,102,241,0.25)';
+      ctx.fill();
+      for (var j = i + 1; j < dots.length; j++) {
+        var d2 = dots[j];
+        var dx = d.x - d2.x, dy = d.y - d2.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(d.x, d.y);
+          ctx.lineTo(d2.x, d2.y);
+          ctx.strokeStyle = 'rgba(99,102,241,' + (0.06 * (1 - dist / 120)) + ')';
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ── Terminal typing effect ──
+(function() {
+  var lines = [
+    {type:'prompt', text:'$ python run.py --realtime'},
+    {type:'out', text:'[BOT] Connecting to Reachy Mini...'},
+    {type:'good', text:'[BOT] Connected. Listening for speech.'},
+    {type:'out', text:''},
+    {type:'accent', text:'[09:14] Patient: "Good morning, Reachy"'},
+    {type:'out', text:'[09:14] Reachy: "Good morning! How did you sleep?"'},
+    {type:'accent', text:'[09:14] Patient: "Not great, my back was hurting"'},
+    {type:'warn', text:'[09:14] [PAIN] Logged: back pain reported'},
+    {type:'out', text:'[09:14] Reachy: "I\'m sorry to hear that. Want to try some gentle stretches?"'},
+    {type:'out', text:''},
+    {type:'good', text:'[09:22] [EXERCISE] Completed: gentle_stretches (8 min)'},
+    {type:'out', text:'[09:23] Reachy: "Great job! Time for your morning medication."'},
+    {type:'warn', text:'[09:23] [MED] Reminder: Lisinopril 10mg'},
+    {type:'good', text:'[09:25] [MED] Taken: Lisinopril 10mg'},
+    {type:'out', text:''},
+    {type:'accent', text:'[09:30] Patient: "Can we play a word game?"'},
+    {type:'out', text:'[09:30] Reachy: "Absolutely! Let\'s do word recall..."'},
+    {type:'good', text:'[09:38] [COGNITIVE] Score: 8/10 (word_recall)'},
+    {type:'out', text:'[09:38] [MOOD] Detected: happy (confidence: 0.87)'},
+  ];
+  var body = document.getElementById('termBody');
+  var idx = 0;
+  function addLine() {
+    if (idx >= lines.length) {
+      body.innerHTML += '<span class="prompt">$ </span><span class="terminal-cursor"></span>';
+      return;
+    }
+    var line = lines[idx];
+    var cls = line.type === 'prompt' ? 'prompt' : line.type;
+    if (line.type === 'prompt') {
+      body.innerHTML += '<span class="prompt">' + line.text + '</span>\n';
+    } else {
+      body.innerHTML += '<span class="' + cls + '">' + line.text + '</span>\n';
+    }
+    body.scrollTop = body.scrollHeight;
+    idx++;
+    setTimeout(addLine, line.text === '' ? 200 : 120 + Math.random() * 80);
+  }
+  // Start when terminal scrolls into view
+  var started = false;
+  var obs = new IntersectionObserver(function(entries) {
+    if (entries[0].isIntersecting && !started) { started = true; setTimeout(addLine, 600); }
+  }, {threshold: 0.3});
+  obs.observe(document.querySelector('.terminal'));
+})();
+
+// ── Scroll reveal ──
+var revealObs = new IntersectionObserver(function(entries) {
+  entries.forEach(function(e) { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, {threshold: 0.1});
+document.querySelectorAll('.reveal').forEach(function(el) { revealObs.observe(el); });
+
 // ── Login ──
 async function doLogin() {
   var u = document.getElementById('username').value.trim();
   var p = document.getElementById('password').value;
   if (document.getElementById('rememberMe').checked) {
     localStorage.setItem('reachy_username', u);
-  } else {
-    localStorage.removeItem('reachy_username');
-  }
+  } else { localStorage.removeItem('reachy_username'); }
   var res = await fetch('/login', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({username: u, password: p})
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:u, password:p})
   });
-  if (res.ok) { window.location.href = '/'; }
+  if (res.ok) { window.location.href='/'; }
   else {
-    document.getElementById('error').style.display = 'block';
+    document.getElementById('error').style.display='block';
     var card = document.querySelector('.login-card');
-    card.classList.remove('shake');
-    void card.offsetWidth;
-    card.classList.add('shake');
+    card.classList.remove('shake'); void card.offsetWidth; card.classList.add('shake');
   }
 }
-
-// Restore saved username
 (function() {
   var saved = localStorage.getItem('reachy_username');
   if (saved) {
@@ -340,26 +545,12 @@ async function doLogin() {
     document.getElementById('password').focus();
   }
 })();
-
 function togglePw() {
   var pw = document.getElementById('password');
   var btn = document.getElementById('eyeBtn');
-  if (pw.type === 'password') { pw.type = 'text'; btn.textContent = '\u{1F648}'; }
-  else { pw.type = 'password'; btn.textContent = '\u{1F441}\uFE0F'; }
+  if (pw.type === 'password') { pw.type='text'; btn.textContent='\u{1F648}'; }
+  else { pw.type='password'; btn.textContent='\u{1F441}\uFE0F'; }
 }
-
-// ── Scroll animations ──
-var observer = new IntersectionObserver(function(entries) {
-  entries.forEach(function(entry) {
-    if (entry.isIntersecting) {
-      entry.target.classList.add('visible');
-    }
-  });
-}, { threshold: 0.1 });
-
-document.querySelectorAll('.fade-up').forEach(function(el) {
-  observer.observe(el);
-});
 </script>
 </body>
 </html>
