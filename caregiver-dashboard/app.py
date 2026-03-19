@@ -1383,6 +1383,8 @@ def doctor_report():
 
 if __name__ == "__main__":
     print("\n=== Caregiver Dashboard ===")
-    print("Open http://localhost:5555 in your browser")
+    port = int(os.environ.get("PORT", 5555))
+    debug = os.environ.get("RAILWAY_ENVIRONMENT") is None  # debug only locally
+    print(f"Open http://localhost:{port} in your browser")
     print("Default login: admin / admin\n")
-    app.run(host="0.0.0.0", port=5555, debug=True, threaded=True)
+    app.run(host="0.0.0.0", port=port, debug=debug, threaded=True)
