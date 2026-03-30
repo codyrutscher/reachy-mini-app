@@ -6,14 +6,18 @@ import os
 import sqlite3
 import threading
 from datetime import datetime
+from typing import Any, Optional
+from log_config import get_logger
+
+logger = get_logger("db")
 
 # Both apps use the same database file
-DB_PATH = os.environ.get("REACHY_DB", os.path.join(os.path.dirname(__file__), "reachy.db"))
+DB_PATH: str = os.environ.get("REACHY_DB", os.path.join(os.path.dirname(__file__), "reachy.db"))
 
 _local = threading.local()
 
 
-def _get_conn():
+def _get_conn() -> sqlite3.Connection:
     """Get a thread-local database connection."""
     if not hasattr(_local, "conn") or _local.conn is None:
         _local.conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -22,7 +26,7 @@ def _get_conn():
     return _local.conn
 
 
-def init_db():
+def init_db() -> None:
     """Create tables if they don't exist."""
     conn = _get_conn()
     conn.executescript("""
@@ -208,12 +212,12 @@ def init_db():
             (k, v),
         )
     conn.commit()
-    print(f"[DB] Database ready: {DB_PATH}")
+    logger.info("Database ready: %s", DB_PATH)
 
 
 # ── Alerts ──────────────────────────────────────────────────────────
 
-def add_alert(alert_type, message, details="", user_said="", time_str=None):
+def add_alert(alert_type: str, message: str, details: str = "", user_said: str = "", time_str: Optional[str] = None) -> dict:
     conn = _get_conn()
     t = time_str or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
@@ -227,7 +231,7 @@ def add_alert(alert_type, message, details="", user_said="", time_str=None):
     }
 
 
-def get_alerts(limit=100):
+def get_alerts(limit: int = 100) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM alerts ORDER BY id DESC LIMIT ?", (limit,)
@@ -235,13 +239,13 @@ def get_alerts(limit=100):
     return [dict(r) | {"acknowledged": bool(r["acknowledged"])} for r in rows]
 
 
-def ack_alert(alert_id):
+def ack_alert(alert_id: int) -> None:
     conn = _get_conn()
     conn.execute("UPDATE alerts SET acknowledged=1 WHERE id=?", (alert_id,))
     conn.commit()
 
 
-def clear_acked_alerts():
+def clear_acked_alerts() -> int:
     conn = _get_conn()
     conn.execute("DELETE FROM alerts WHERE acknowledged=1")
     conn.commit()
@@ -251,7 +255,7 @@ def clear_acked_alerts():
 
 # ── Messages (caregiver → robot) ───────────────────────────────────
 
-def add_message(text, priority="normal"):
+def add_message(text: str, priority: str = "normal") -> dict:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
@@ -265,7 +269,7 @@ def add_message(text, priority="normal"):
     }
 
 
-def get_pending_messages():
+def get_pending_messages() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM messages WHERE delivered=0 ORDER BY id"
@@ -282,7 +286,7 @@ def get_pending_messages():
 
 # ── Conversation ────────────────────────────────────────────────────
 
-def add_conversation(speaker, text):
+def add_conversation(speaker: str, text: str) -> dict:
     conn = _get_conn()
     t = datetime.now().strftime("%H:%M:%S")
     conn.execute(
@@ -293,7 +297,7 @@ def add_conversation(speaker, text):
     return {"speaker": speaker, "text": text, "time": t}
 
 
-def get_conversation(limit=50):
+def get_conversation(limit: int = 50) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT speaker, text, time FROM conversation ORDER BY id DESC LIMIT ?",
@@ -304,13 +308,13 @@ def get_conversation(limit=50):
 
 # ── Patient status ──────────────────────────────────────────────────
 
-def get_status():
+def get_status() -> dict:
     conn = _get_conn()
     rows = conn.execute("SELECT key, value FROM patient_status").fetchall()
     return {r["key"]: r["value"] for r in rows}
 
 
-def update_status(**kwargs):
+def update_status(**kwargs: Any) -> None:
     conn = _get_conn()
     for k, v in kwargs.items():
         conn.execute(
@@ -322,14 +326,14 @@ def update_status(**kwargs):
 
 # ── Mood history ────────────────────────────────────────────────────
 
-def add_mood(mood):
+def add_mood(mood: str) -> None:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute("INSERT INTO mood_history (mood, time) VALUES (?,?)", (mood, t))
     conn.commit()
 
 
-def get_mood_history(limit=50):
+def get_mood_history(limit: int = 50) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT mood, time FROM mood_history ORDER BY id DESC LIMIT ?",
@@ -340,7 +344,7 @@ def get_mood_history(limit=50):
 
 # ── Check-in history ───────────────────────────────────────────────
 
-def add_checkin(results):
+def add_checkin(results: dict) -> None:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
@@ -350,7 +354,7 @@ def add_checkin(results):
     conn.commit()
 
 
-def get_checkin_history(limit=30):
+def get_checkin_history(limit: int = 30) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT time, results FROM checkin_history ORDER BY id DESC LIMIT ?",
@@ -361,7 +365,7 @@ def get_checkin_history(limit=30):
 
 # ── Patients ────────────────────────────────────────────────────────
 
-def add_patient(name, room="", age=None, conditions="", emergency_contact="", patient_type="elderly"):
+def add_patient(name: str, room: str = "", age: Optional[int] = None, conditions: str = "", emergency_contact: str = "", patient_type: str = "elderly") -> dict:
     conn = _get_conn()
     cur = conn.execute(
         "INSERT INTO patients (name, room, age, patient_type, conditions, emergency_contact) VALUES (?,?,?,?,?,?)",
@@ -371,19 +375,19 @@ def add_patient(name, room="", age=None, conditions="", emergency_contact="", pa
     return get_patient(cur.lastrowid)
 
 
-def get_patients():
+def get_patients() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM patients ORDER BY name").fetchall()
     return [dict(r) for r in rows]
 
 
-def get_patient(patient_id):
+def get_patient(patient_id: int) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM patients WHERE id=?", (patient_id,)).fetchone()
     return dict(row) if row else None
 
 
-def delete_patient(patient_id):
+def delete_patient(patient_id: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM patients WHERE id=?", (patient_id,))
     conn.commit()
@@ -391,7 +395,7 @@ def delete_patient(patient_id):
 
 # ── Facilities ──────────────────────────────────────────────────────
 
-def add_facility(name, address="", ftype="nursing_home", robots=0, contact=""):
+def add_facility(name: str, address: str = "", ftype: str = "nursing_home", robots: int = 0, contact: str = "") -> dict:
     conn = _get_conn()
     cur = conn.execute(
         "INSERT INTO facilities (name, address, type, robots, contact) VALUES (?,?,?,?,?)",
@@ -401,19 +405,19 @@ def add_facility(name, address="", ftype="nursing_home", robots=0, contact=""):
     return get_facility(cur.lastrowid)
 
 
-def get_facilities():
+def get_facilities() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM facilities ORDER BY name").fetchall()
     return [dict(r) for r in rows]
 
 
-def get_facility(facility_id):
+def get_facility(facility_id: int) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM facilities WHERE id=?", (facility_id,)).fetchone()
     return dict(row) if row else None
 
 
-def delete_facility(facility_id):
+def delete_facility(facility_id: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM facilities WHERE id=?", (facility_id,))
     conn.commit()
@@ -421,13 +425,13 @@ def delete_facility(facility_id):
 
 # ── Settings ────────────────────────────────────────────────────────
 
-def get_settings():
+def get_settings() -> dict:
     conn = _get_conn()
     rows = conn.execute("SELECT key, value FROM settings").fetchall()
     return {r["key"]: r["value"] for r in rows}
 
 
-def save_settings(**kwargs):
+def save_settings(**kwargs: Any) -> None:
     conn = _get_conn()
     for k, v in kwargs.items():
         conn.execute(
@@ -439,7 +443,7 @@ def save_settings(**kwargs):
 
 # ── Clear all ───────────────────────────────────────────────────────
 
-def clear_all():
+def clear_all() -> None:
     conn = _get_conn()
     for table in ["alerts", "messages", "conversation", "mood_history",
                    "checkin_history", "activity_log", "med_log", "daily_reports"]:
@@ -449,7 +453,7 @@ def clear_all():
 
 # ── Scheduled messages ──────────────────────────────────────────────
 
-def add_scheduled_message(text, time_str, repeat="once"):
+def add_scheduled_message(text: str, time_str: str, repeat: str = "once") -> dict:
     conn = _get_conn()
     cur = conn.execute(
         "INSERT INTO scheduled_messages (text, time, repeat) VALUES (?,?,?)",
@@ -459,19 +463,19 @@ def add_scheduled_message(text, time_str, repeat="once"):
     return get_scheduled_message(cur.lastrowid)
 
 
-def get_scheduled_messages():
+def get_scheduled_messages() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM scheduled_messages ORDER BY time").fetchall()
     return [dict(r) | {"active": bool(r["active"])} for r in rows]
 
 
-def get_scheduled_message(mid):
+def get_scheduled_message(mid: int) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM scheduled_messages WHERE id=?", (mid,)).fetchone()
     return dict(row) | {"active": bool(row["active"])} if row else None
 
 
-def get_due_scheduled_messages(current_time):
+def get_due_scheduled_messages(current_time: str) -> list[dict]:
     """Get messages that should be sent now (HH:MM format)."""
     conn = _get_conn()
     rows = conn.execute(
@@ -488,13 +492,13 @@ def get_due_scheduled_messages(current_time):
     return results
 
 
-def delete_scheduled_message(mid):
+def delete_scheduled_message(mid: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM scheduled_messages WHERE id=?", (mid,))
     conn.commit()
 
 
-def toggle_scheduled_message(mid):
+def toggle_scheduled_message(mid: int) -> None:
     conn = _get_conn()
     conn.execute("UPDATE scheduled_messages SET active = NOT active WHERE id=?", (mid,))
     conn.commit()
@@ -502,7 +506,7 @@ def toggle_scheduled_message(mid):
 
 # ── Medications ─────────────────────────────────────────────────────
 
-def add_medication(name, dosage="", times="", notes=""):
+def add_medication(name: str, dosage: str = "", times: str = "", notes: str = "") -> dict:
     conn = _get_conn()
     cur = conn.execute(
         "INSERT INTO medications (name, dosage, times, notes) VALUES (?,?,?,?)",
@@ -512,25 +516,25 @@ def add_medication(name, dosage="", times="", notes=""):
     return get_medication(cur.lastrowid)
 
 
-def get_medications():
+def get_medications() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT * FROM medications ORDER BY name").fetchall()
     return [dict(r) | {"active": bool(r["active"])} for r in rows]
 
 
-def get_medication(mid):
+def get_medication(mid: int) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM medications WHERE id=?", (mid,)).fetchone()
     return dict(row) | {"active": bool(row["active"])} if row else None
 
 
-def delete_medication(mid):
+def delete_medication(mid: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM medications WHERE id=?", (mid,))
     conn.commit()
 
 
-def log_med_event(med_id, status, scheduled_time=""):
+def log_med_event(med_id: int, status: str, scheduled_time: str = "") -> None:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
@@ -540,7 +544,7 @@ def log_med_event(med_id, status, scheduled_time=""):
     conn.commit()
 
 
-def get_med_log(limit=50):
+def get_med_log(limit: int = 50) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("""
         SELECT ml.*, m.name as med_name FROM med_log ml
@@ -550,7 +554,7 @@ def get_med_log(limit=50):
     return [dict(r) for r in rows]
 
 
-def get_med_log_today():
+def get_med_log_today() -> list[dict]:
     conn = _get_conn()
     today = datetime.now().strftime("%Y-%m-%d")
     rows = conn.execute("""
@@ -564,7 +568,7 @@ def get_med_log_today():
 
 # ── Activity log ────────────────────────────────────────────────────
 
-def add_activity(action, details=""):
+def add_activity(action: str, details: str = "") -> None:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
@@ -574,7 +578,7 @@ def add_activity(action, details=""):
     conn.commit()
 
 
-def get_activity_log(limit=100):
+def get_activity_log(limit: int = 100) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (limit,)
@@ -584,7 +588,7 @@ def get_activity_log(limit=100):
 
 # ── Users / Auth ────────────────────────────────────────────────────
 
-def add_user(username, password_hash, role="caregiver", name=""):
+def add_user(username: str, password_hash: str, role: str = "caregiver", name: str = "") -> bool:
     conn = _get_conn()
     try:
         conn.execute(
@@ -597,19 +601,19 @@ def add_user(username, password_hash, role="caregiver", name=""):
         return False
 
 
-def get_user(username):
+def get_user(username: str) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
     return dict(row) if row else None
 
 
-def get_users():
+def get_users() -> list[dict]:
     conn = _get_conn()
     rows = conn.execute("SELECT id, username, role, name FROM users ORDER BY username").fetchall()
     return [dict(r) for r in rows]
 
 
-def delete_user(uid):
+def delete_user(uid: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
@@ -617,7 +621,7 @@ def delete_user(uid):
 
 # ── Daily reports ───────────────────────────────────────────────────
 
-def add_daily_report(report_text, date_str=None):
+def add_daily_report(report_text: str, date_str: Optional[str] = None) -> dict:
     conn = _get_conn()
     d = date_str or datetime.now().strftime("%Y-%m-%d")
     conn.execute(
@@ -627,7 +631,7 @@ def add_daily_report(report_text, date_str=None):
     conn.commit()
 
 
-def get_daily_reports(limit=30):
+def get_daily_reports(limit: int = 30) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM daily_reports ORDER BY date DESC LIMIT ?", (limit,)
@@ -635,7 +639,7 @@ def get_daily_reports(limit=30):
     return [dict(r) for r in rows]
 
 
-def generate_daily_report():
+def generate_daily_report() -> dict:
     """Generate a summary report for today."""
     today = datetime.now().strftime("%Y-%m-%d")
     conn = _get_conn()
@@ -680,7 +684,7 @@ def generate_daily_report():
 
 # ── Caregiver Notes ─────────────────────────────────────────────
 
-def add_note(note, author="", patient_id=0):
+def add_note(note: str, author: str = "", patient_id: int = 0) -> dict:
     conn = _get_conn()
     t = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
@@ -691,7 +695,7 @@ def add_note(note, author="", patient_id=0):
     return {"id": cur.lastrowid, "patient_id": patient_id, "note": note, "author": author, "time": t}
 
 
-def get_notes(patient_id=None, limit=50):
+def get_notes(patient_id: Optional[int] = None, limit: int = 50) -> list[dict]:
     conn = _get_conn()
     if patient_id is not None:
         rows = conn.execute(
@@ -705,7 +709,7 @@ def get_notes(patient_id=None, limit=50):
     return [dict(r) for r in rows]
 
 
-def delete_note(note_id):
+def delete_note(note_id: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM caregiver_notes WHERE id=?", (note_id,))
     conn.commit()
@@ -713,7 +717,7 @@ def delete_note(note_id):
 
 # ── Shift Handoffs ──────────────────────────────────────────────────
 
-def create_shift_handoff(from_caregiver, to_caregiver=""):
+def create_shift_handoff(from_caregiver: str, to_caregiver: str = "") -> dict:
     """Auto-generate a shift handoff report from today's data."""
     conn = _get_conn()
     today = datetime.now().strftime("%Y-%m-%d")
@@ -779,7 +783,7 @@ def create_shift_handoff(from_caregiver, to_caregiver=""):
     }
 
 
-def get_shift_handoffs(limit=20):
+def get_shift_handoffs(limit: int = 20) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM shift_handoffs ORDER BY id DESC LIMIT ?", (limit,)
@@ -789,7 +793,7 @@ def get_shift_handoffs(limit=20):
 
 # ── Family Messages ─────────────────────────────────────────────────
 
-def add_family_message(family_member, message, patient_id=0, message_type="text"):
+def add_family_message(family_member: str, message: str, patient_id: int = 0, message_type: str = "text") -> dict:
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
@@ -800,7 +804,7 @@ def add_family_message(family_member, message, patient_id=0, message_type="text"
     return {"id": cur.lastrowid, "family_member": family_member, "message": message, "created_at": now}
 
 
-def get_family_messages(patient_id=None, limit=50):
+def get_family_messages(patient_id: Optional[int] = None, limit: int = 50) -> list[dict]:
     conn = _get_conn()
     if patient_id is not None:
         rows = conn.execute(
@@ -814,7 +818,7 @@ def get_family_messages(patient_id=None, limit=50):
     return [dict(r) for r in rows]
 
 
-def mark_family_message_read(msg_id):
+def mark_family_message_read(msg_id: int) -> None:
     conn = _get_conn()
     conn.execute("UPDATE family_messages SET read=1 WHERE id=?", (msg_id,))
     conn.commit()
@@ -822,8 +826,10 @@ def mark_family_message_read(msg_id):
 
 # ── Vitals Log ──────────────────────────────────────────────────────
 
-def add_vitals(heart_rate=None, spo2=None, bp_sys=None, bp_dia=None,
-               temperature=None, source="simulated", patient_id=0):
+def add_vitals(heart_rate: Optional[int] = None, spo2: Optional[int] = None,
+               bp_sys: Optional[int] = None, bp_dia: Optional[int] = None,
+               temperature: Optional[float] = None, source: str = "simulated",
+               patient_id: int = 0) -> None:
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
@@ -835,7 +841,7 @@ def add_vitals(heart_rate=None, spo2=None, bp_sys=None, bp_dia=None,
     conn.commit()
 
 
-def get_vitals_history(patient_id=0, limit=50):
+def get_vitals_history(patient_id: int = 0, limit: int = 50) -> list[dict]:
     conn = _get_conn()
     rows = conn.execute(
         "SELECT * FROM vitals_log WHERE patient_id=? ORDER BY id DESC LIMIT ?",
@@ -844,7 +850,7 @@ def get_vitals_history(patient_id=0, limit=50):
     return [dict(r) for r in rows]
 
 
-def get_latest_vitals(patient_id=0):
+def get_latest_vitals(patient_id: int = 0) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute(
         "SELECT * FROM vitals_log WHERE patient_id=? ORDER BY id DESC LIMIT 1",
@@ -853,13 +859,13 @@ def get_latest_vitals(patient_id=0):
     return dict(row) if row else None
 
 
-def update_user_password(username, new_hash):
+def update_user_password(username: str, new_hash: str) -> None:
     conn = _get_conn()
     conn.execute("UPDATE users SET password_hash=? WHERE username=?", (new_hash, username))
     conn.commit()
 
 
-def update_user_role(username, role):
+def update_user_role(username: str, role: str) -> None:
     conn = _get_conn()
     conn.execute("UPDATE users SET role=? WHERE username=?", (role, username))
     conn.commit()
@@ -871,7 +877,7 @@ def update_user_role(username, role):
 
 # ── Incident Reports ────────────────────────────────────────────────
 
-def add_incident(patient_id, incident_type, severity, description, actions_taken, reported_by):
+def add_incident(patient_id: str, incident_type: str, severity: str, description: str, actions_taken: str, reported_by: str) -> dict:
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cur = conn.execute(
@@ -884,7 +890,7 @@ def add_incident(patient_id, incident_type, severity, description, actions_taken
     return get_incident(cur.lastrowid)
 
 
-def get_incidents(patient_id=None, limit=100):
+def get_incidents(patient_id: Optional[str] = None, limit: int = 100) -> list[dict]:
     conn = _get_conn()
     if patient_id:
         rows = conn.execute(
@@ -898,13 +904,13 @@ def get_incidents(patient_id=None, limit=100):
     return [dict(r) for r in rows]
 
 
-def get_incident(incident_id):
+def get_incident(incident_id: int) -> Optional[dict]:
     conn = _get_conn()
     row = conn.execute("SELECT * FROM incident_reports WHERE id=?", (incident_id,)).fetchone()
     return dict(row) if row else None
 
 
-def resolve_incident(incident_id):
+def resolve_incident(incident_id: int) -> None:
     conn = _get_conn()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
@@ -914,44 +920,111 @@ def resolve_incident(incident_id):
     conn.commit()
 
 
-def delete_incident(incident_id):
+def delete_incident(incident_id: int) -> None:
     conn = _get_conn()
     conn.execute("DELETE FROM incident_reports WHERE id=?", (incident_id,))
     conn.commit()
 
 
-def get_bot_conversations(patient_id="default", limit=500):
+def get_bot_conversations(patient_id: str = "default", limit: int = 500) -> list[dict]:
     return []
 
-def get_bot_moods(patient_id="default", limit=50):
+def get_bot_moods(patient_id: str = "default", limit: int = 50) -> list[dict]:
     return []
 
-def get_bot_session_summaries(patient_id="default", limit=20):
+def get_bot_session_summaries(patient_id: str = "default", limit: int = 20) -> list[dict]:
     return []
 
-def get_bot_facts(patient_id="default"):
+def get_bot_facts(patient_id: str = "default") -> list[dict]:
     return []
 
-def get_bot_alerts(patient_id="default", limit=50):
+def get_bot_alerts(patient_id: str = "default", limit: int = 50) -> list[dict]:
     return []
 
-def get_bot_profile(patient_id="default"):
+def get_bot_conversation_intel(patient_id: str = "default") -> Optional[dict]:
     return None
 
-def get_bot_weekly_reports(patient_id="default", limit=4):
+def get_bot_profile(patient_id: str = "default") -> Optional[dict]:
+    return None
+
+def get_bot_weekly_reports(patient_id: str = "default", limit: int = 4) -> list[dict]:
     return []
 
-def get_bot_cognitive_scores(patient_id="default", limit=20):
+def get_bot_cognitive_scores(patient_id: str = "default", limit: int = 20) -> list[dict]:
     return []
 
-def get_bot_exercises(patient_id="default", limit=20):
+def get_bot_exercises(patient_id: str = "default", limit: int = 20) -> list[dict]:
     return []
 
-def get_bot_sleep_log(patient_id="default", limit=14):
+def get_bot_sleep_log(patient_id: str = "default", limit: int = 14) -> list[dict]:
     return []
 
-def get_bot_reminders(patient_id="default"):
+def get_bot_reminders(patient_id: str = "default") -> list[dict]:
     return []
 
-def get_bot_streaks(patient_id="default"):
+def get_bot_streaks(patient_id: str = "default") -> int:
     return 0
+
+
+def get_bot_life_story(patient_id: str = "default") -> Optional[dict]:
+    return None
+
+def compile_bot_life_story(patient_id: str = "default") -> Optional[dict]:
+    return None
+
+
+def get_bot_daily_journal(patient_id: str = "default", limit: int = 30) -> list[dict]:
+    return []
+
+def generate_bot_journal_entry(patient_id: str = "default", for_date: str = "") -> Optional[dict]:
+    return None
+
+
+def get_bot_relationship_map(patient_id: str = "default") -> dict:
+    return {"nodes": [], "edges": []}
+
+
+def get_bot_conversation_replay(patient_id: str = "default", date_str: str = "", limit: int = 200) -> list[dict]:
+    return []
+
+def get_bot_session_dates(patient_id: str = "default") -> list[str]:
+    return []
+
+
+def get_bot_wishes(patient_id: str = "default", limit: int = 30) -> list[dict]:
+    return []
+
+def fulfill_bot_wish(wish_id: int) -> None:
+    pass
+
+
+def get_bot_advice_book(patient_id: str = "default", limit: int = 50) -> list[dict]:
+    return []
+
+
+def get_bot_recipes(patient_id: str = "default", limit: int = 20) -> list[dict]:
+    return []
+
+
+def get_active_care_plans(patient_id: str = "default") -> list[dict]:
+    return []
+
+
+def search_bot_conversations(query: str = "", patient_id: str = "default", limit: int = 50) -> list[dict]:
+    return []
+
+
+def get_bot_mood_calendar(patient_id: str = "default", days: int = 90) -> list[dict]:
+    return []
+
+
+def get_bot_topic_cloud(patient_id: str = "default", days: int = 30) -> list[dict]:
+    return []
+
+
+def get_bot_session_by_date(patient_id: str = "default", date_str: str = "") -> dict:
+    return {}
+
+
+def update_bot_profile(patient_id: str = "default", **kwargs) -> None:
+    pass

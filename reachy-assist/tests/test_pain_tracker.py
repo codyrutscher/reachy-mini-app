@@ -1,7 +1,7 @@
 """Tests for the pain tracker module."""
 
 import pytest
-from pain_tracker import detect_pain, KEYWORDS
+from health.pain_tracker import detect_pain, KEYWORDS
 
 
 class TestPainDetection:

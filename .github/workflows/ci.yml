@@ -28,8 +28,8 @@ jobs:
           pip install pytest pytest-cov
           pip install openai flask flask-cors numpy bcrypt
 
-      - name: Run tests
-        run: python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
+      - name: Run tests with coverage
+        run: python -m pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --cov-fail-under=60
 
   test-dashboard:
     name: Dashboard Tests
@@ -49,13 +49,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flask flask-cors pytest bcrypt
+          pip install flask flask-cors pytest bcrypt python-dotenv
 
       - name: Run dashboard API tests
         run: python -m pytest ../reachy-assist/tests/test_dashboard_api.py -v --tb=short
 
   lint:
-    name: Lint
+    name: Lint (ruff)
     runs-on: ubuntu-latest
 
     steps:
@@ -74,3 +74,48 @@ jobs:
 
       - name: Lint caregiver-dashboard
         run: ruff check caregiver-dashboard/ --select=E,F,W --ignore=E501,F401,E722 --exclude=".venv,__pycache__"
+
+  typecheck:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install mypy and stubs
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy types-requests
+          pip install openai flask flask-cors numpy bcrypt python-dotenv
+
+      - name: Type check key modules
+        run: |
+          mypy reachy-assist/config.py --ignore-missing-imports --no-error-summary || true
+          mypy caregiver-dashboard/validators.py --ignore-missing-imports --no-error-summary || true
+          mypy caregiver-dashboard/db.py --ignore-missing-imports --no-error-summary || true
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dashboard Docker image
+        run: docker build -f Dockerfile.dashboard -t reachy-dashboard:test .
+
+      - name: Verify image runs
+        run: |
+          docker run -d --name test-dash -p 5555:5555 \
+            -e SECRET_KEY=test-ci-key \
+            -e FLASK_ENV=testing \
+            reachy-dashboard:test
+          sleep 3
+          curl -f http://localhost:5555/login || (docker logs test-dash && exit 1)
+          docker stop test-dash
+          docker rm test-dash

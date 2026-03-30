@@ -1,7 +1,7 @@
 """Tests for the interactive storytelling module."""
 
 import pytest
-from interactive_story import InteractiveStory, is_story_trigger, _STORY_TRIGGERS
+from activities.interactive_story import InteractiveStory, is_story_trigger, _STORY_TRIGGERS
 
 
 class TestStoryTrigger:

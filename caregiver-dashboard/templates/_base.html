@@ -163,6 +163,7 @@
   <div class="nav-brand">&#x1F916; <span>Reachy</span> Care</div>
   <div class="nav-links">
     <a href="/" class="nav-link {% if active_page == 'dashboard' %}active{% endif %}">&#x1F4CA; {{ t('dashboard') }}</a>
+    <a href="/live" class="nav-link {% if active_page == 'live' %}active{% endif %}">&#x1F534; Live</a>
     {% if user_role in ('admin', 'caregiver') %}
     <div class="nav-dropdown">
       <span class="nav-link {% if active_page in ('patients', 'medications', 'schedule') %}active{% endif %}">&#x1F465; Care</span>
@@ -179,15 +180,17 @@
         <a href="/reports" class="{% if active_page == 'reports' %}active{% endif %}">&#x1F4DD; {{ t('reports') }}</a>
         <a href="/activity" class="{% if active_page == 'activity' %}active{% endif %}">&#x1F4CB; {{ t('activity') }}</a>
         <a href="/incidents" class="{% if active_page == 'incidents' %}active{% endif %}">&#x26A0;&#xFE0F; Incidents</a>
+        <a href="/analytics" class="{% if active_page == 'analytics' %}active{% endif %}">&#x1F9E0; Analytics</a>
       </div>
     </div>
     <div class="nav-dropdown">
-      <span class="nav-link {% if active_page in ('facilities', 'camera', 'teleop', 'mirror', 'settings') %}active{% endif %}">&#x1F3E5; Admin</span>
+      <span class="nav-link {% if active_page in ('facilities', 'camera', 'teleop', 'mirror', 'logs', 'settings') %}active{% endif %}">&#x1F3E5; Admin</span>
       <div class="nav-dropdown-menu">
         <a href="/facilities" class="{% if active_page == 'facilities' %}active{% endif %}">&#x1F3E5; {{ t('facilities') }}</a>
         <a href="/camera" class="{% if active_page == 'camera' %}active{% endif %}">&#x1F4F7; Camera</a>
         <a href="/teleop" class="{% if active_page == 'teleop' %}active{% endif %}">&#x1F3AE; Teleoperation</a>
         <a href="/mirror" class="{% if active_page == 'mirror' %}active{% endif %}">&#x1FA9E; Mirror Mode</a>
+        <a href="/logs" class="{% if active_page == 'logs' %}active{% endif %}">&#x1F4CB; System Logs</a>
         {% if user_role == 'admin' %}
         <a href="/settings" class="{% if active_page == 'settings' %}active{% endif %}">&#x2699;&#xFE0F; {{ t('settings') }}</a>
         {% endif %}
@@ -196,6 +199,8 @@
     {% endif %}
     <a href="/family" class="nav-link {% if active_page == 'family' %}active{% endif %}">&#x1F468;&#x200D;&#x1F469;&#x200D;&#x1F467; {{ t('family') }}</a>
     <a href="/memory-book" class="nav-link {% if active_page == 'memory_book' %}active{% endif %}">&#x1F4D6; Memory Book</a>
+    <a href="/radio" class="nav-link {% if active_page == 'radio' %}active{% endif %}">&#x1F4FB; Radio</a>
+    <a href="/code-pad" class="nav-link {% if active_page == 'code_pad' %}active{% endif %}">&#x1F4BB; Code Pad</a>
   </div>
   <div class="nav-right">
     {% if user_name %}

@@ -530,7 +530,10 @@ async function doLogin() {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({username:u, password:p})
   });
-  if (res.ok) { window.location.href='/'; }
+  if (res.ok) {
+    var data = await res.json();
+    window.location.href = data.redirect || '/';
+  }
   else {
     document.getElementById('error').style.display='block';
     var card = document.querySelector('.login-card');

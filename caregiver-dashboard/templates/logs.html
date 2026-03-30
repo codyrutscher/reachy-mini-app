@@ -1,0 +1,160 @@
+{% extends "_base.html" %}
+{% block title %}Logs — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .logs-page { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .log-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .log-controls select, .log-controls input {
+    padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 13px; }
+  .log-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace; }
+  .log-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--border);
+    font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; background: var(--bg); }
+  .log-table td { padding: 5px 10px; border-bottom: 1px solid var(--border); vertical-align: top; white-space: nowrap; }
+  .log-table td.msg-col { white-space: normal; word-break: break-word; max-width: 500px; }
+  .log-table tr:hover { background: rgba(59,130,246,0.05); }
+  .lvl { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+  .lvl-DEBUG { background: rgba(139,141,151,0.15); color: var(--muted); }
+  .lvl-INFO { background: rgba(34,197,94,0.15); color: var(--green); }
+  .lvl-WARNING { background: rgba(234,179,8,0.15); color: #ca8a04; }
+  .lvl-ERROR { background: rgba(239,68,68,0.15); color: var(--red); }
+  .lvl-CRITICAL { background: rgba(239,68,68,0.3); color: var(--red); font-weight: 700; }
+  .health-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .health-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; text-align: center; }
+  .health-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .health-card .value { font-size: 20px; font-weight: 600; }
+  .health-card .value.ok { color: var(--green); }
+  .health-card .value.err { color: var(--red); }
+  .log-scroll { max-height: 70vh; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--card); }
+  .auto-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(59,130,246,0.15); color: var(--blue); cursor: pointer; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="logs-page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📋 System Logs</div>
+      <div class="page-subtitle">Real-time observability — requests, errors, and system health</div>
+    </div>
+  </div>
+
+  <div class="health-cards" id="healthCards">
+    <div class="health-card"><div class="label">Uptime</div><div class="value" id="hUptime">—</div></div>
+    <div class="health-card"><div class="label">Database</div><div class="value" id="hDb">—</div></div>
+    <div class="health-card"><div class="label">Robot API</div><div class="value" id="hRobot">—</div></div>
+    <div class="health-card"><div class="label">SSE Listeners</div><div class="value" id="hSse">—</div></div>
+    <div class="health-card"><div class="label">Memory</div><div class="value" id="hMem">—</div></div>
+    <div class="health-card"><div class="label">Python</div><div class="value" id="hPy">—</div></div>
+  </div>
+
+  <div class="log-controls">
+    <select id="levelFilter" onchange="loadLogs()">
+      <option value="">All levels</option>
+      <option value="DEBUG">DEBUG</option>
+      <option value="INFO">INFO</option>
+      <option value="WARNING">WARNING</option>
+      <option value="ERROR">ERROR</option>
+    </select>
+    <input type="text" id="moduleFilter" placeholder="Filter by module..." oninput="loadLogs()">
+    <select id="limitSelect" onchange="loadLogs()">
+      <option value="50">50 entries</option>
+      <option value="100" selected>100 entries</option>
+      <option value="200">200 entries</option>
+      <option value="500">500 entries</option>
+    </select>
+    <span class="auto-badge" id="autoToggle" onclick="toggleAuto()">⏸ Auto-refresh: ON</span>
+    <button class="btn btn-ghost btn-sm" onclick="loadLogs()">↻ Refresh</button>
+  </div>
+
+  <div class="log-scroll">
+    <table class="log-table">
+      <thead><tr>
+        <th>Time</th><th>Level</th><th>Module</th><th>Message</th><th>Duration</th><th>Status</th>
+      </tr></thead>
+      <tbody id="logBody"></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+var autoRefresh = true;
+var refreshTimer = null;
+
+function loadHealth() {
+  fetch('/api/health').then(function(r) { return r.json(); }).then(function(d) {
+    document.getElementById('hUptime').textContent = d.uptime || '—';
+    var dbEl = document.getElementById('hDb');
+    dbEl.textContent = d.database || '—';
+    dbEl.className = 'value ' + (d.database === 'connected' ? 'ok' : 'err');
+    var robotEl = document.getElementById('hRobot');
+    robotEl.textContent = d.robot_api || '—';
+    robotEl.className = 'value ' + (d.robot_api === 'connected' ? 'ok' : 'err');
+    document.getElementById('hSse').textContent = d.sse_listeners != null ? d.sse_listeners : '—';
+    document.getElementById('hMem').textContent = d.memory_mb ? d.memory_mb + ' MB' : '—';
+    document.getElementById('hPy').textContent = d.python || '—';
+  }).catch(function() {});
+}
+
+function loadLogs() {
+  var level = document.getElementById('levelFilter').value;
+  var module = document.getElementById('moduleFilter').value;
+  var limit = document.getElementById('limitSelect').value;
+  var url = '/api/logs?limit=' + limit;
+  if (level) url += '&level=' + level;
+  if (module) url += '&module=' + encodeURIComponent(module);
+
+  fetch(url).then(function(r) { return r.json(); }).then(function(logs) {
+    var tbody = document.getElementById('logBody');
+    var rows = '';
+    // Show newest first
+    for (var i = logs.length - 1; i >= 0; i--) {
+      var l = logs[i];
+      var ts = l.ts ? l.ts.split('T')[1] || l.ts : '';
+      if (ts.length > 12) ts = ts.substring(0, 12);
+      var dur = l.duration_ms != null ? l.duration_ms + 'ms' : '';
+      var st = l.status != null ? l.status : '';
+      var mod = (l.module || '').split('.').pop();
+      rows += '<tr>'
+        + '<td>' + ts + '</td>'
+        + '<td><span class="lvl lvl-' + l.level + '">' + l.level + '</span></td>'
+        + '<td>' + mod + '</td>'
+        + '<td class="msg-col">' + escHtml(l.msg || '') + '</td>'
+        + '<td>' + dur + '</td>'
+        + '<td>' + st + '</td>'
+        + '</tr>';
+    }
+    tbody.innerHTML = rows;
+  }).catch(function() {});
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function toggleAuto() {
+  autoRefresh = !autoRefresh;
+  var el = document.getElementById('autoToggle');
+  if (autoRefresh) {
+    el.textContent = '⏸ Auto-refresh: ON';
+    startAuto();
+  } else {
+    el.textContent = '▶ Auto-refresh: OFF';
+    if (refreshTimer) clearInterval(refreshTimer);
+  }
+}
+
+function startAuto() {
+  if (refreshTimer) clearInterval(refreshTimer);
+  refreshTimer = setInterval(function() {
+    if (autoRefresh) { loadLogs(); loadHealth(); }
+  }, 3000);
+}
+
+loadHealth();
+loadLogs();
+startAuto();
+</script>
+{% endblock %}

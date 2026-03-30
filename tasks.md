@@ -1,222 +1,129 @@
-# Reachy Care Dashboard — Practice Tasks
+# Reachy Care — 100 Tasks
 
-Difficulty: 🟢 easy | 🟡 medium | 🔴 hard
-Skills in parentheses. Check off as you complete them.
-
-Work through these one at a time — each one teaches a specific skill.
+Organized by category. Each task is a concrete, buildable feature.
 
 ---
 
-## 🟦 activity.html (8 tasks)
+## 🔊 Sound & Audio (1-12)
 
-- [x] 1. 🟢 Add `display: flex` and `gap: 10px` to `.activity-row` so icon and text sit side by side (CSS)
-- [x] 2. 🟢 Add a row count next to the subtitle that updates when you filter, like "Showing 12 events" (JS)
-- [x] 3. 🟡 Color-code the left border of each row by action type — red for alerts, green for meds, blue for messages (JS + CSS)
-- [x] 4. 🟡 Add a search input that filters rows by text content in real-time as you type (HTML + JS)
-- [x] 5. 🟡 Write a `timeAgo()` function that shows "2 hours ago" instead of raw timestamps (JS)
-- [x] 6. 🟡 Add a "Clear Filters" button that resets the dropdown and search box (HTML + JS)
-- [x] 7. 🔴 Add summary stat cards above the list — total events, alerts count, med events, patient interactions (HTML + JS)
-- [x] 8. 🔴 Group activities by date with sticky date headers like "Today", "Yesterday", "March 13" (JS + CSS)
+- [x] 1. Sound effects engine — play WAV files through Reachy's speaker for game sounds (ding, buzzer, applause, drumroll)
+- [x] 2. Ambient soundscapes — play rain, ocean, birds, fireplace through Reachy during calm moments or night mode
+- [x] 3. Voice speed control — "speak slower" / "speak faster" adjusts OpenAI TTS speed parameter
+- [x] 4. Volume control — "speak louder" / "speak quieter" adjusts Reachy's speaker output level
+- [x] 5. Sound-based games — Reachy plays a sound and patient guesses what it is (animal sounds, instruments, nature)
+- [x] 6. Musical instrument mode — antennas play different notes based on position, patient conducts
+- [x] 7. Doorbell detection — Reachy hears the doorbell and tells the patient "I think someone's at the door!"
+- [x] 8. Sound direction awareness — use `get_DoA()` to detect where sound comes from and turn toward it
+- [x] 9. Ambient noise monitoring — detect if the room is too loud/quiet and adjust Reachy's voice volume
+- [x] 10. Lullaby player — play gentle lullabies through Reachy's speaker at bedtime
+- [x] 11. Audiobook reader — Reachy reads a book aloud with expressive head movements matching the story
+- [x] 12. Sound memory game — Reachy plays a sequence of sounds, patient repeats them back
 
-## 🟦 dashboard.html (15 tasks)
+## 🎯 Spatial Awareness (13-22)
 
-- [x] 9. 🟢 Change the camera "offline" message to something more helpful with a retry button (HTML + CSS)
-- [x] 10. 🟢 Add a pulsing animation to the alert stat cards when count is > 0 (CSS)
-- [x] 11. 🟡 Add a "last updated" timestamp that shows when data was last refreshed (JS)
-- [x] 12. 🟡 Make the conversation bubbles show relative time ("2m ago") instead of raw timestamps (JS)
-- [x] 13. 🟡 Add a notification sound toggle button in the header (HTML + JS)
-- [x] 14. 🔴 Add a mini mood chart in the patient bar showing the last 10 mood readings as colored dots (JS + CSS)
-- [x] 15. 🔴 Make the quick message buttons customizable — save custom ones to localStorage (JS)
-- [ ] 16. 🟢 Add a welcome banner that shows the caregiver's name and current shift time (HTML + JS)
-- [ ] 17. 🟡 Add a "patient at a glance" summary card — name, mood, last spoke, current activity (HTML + JS)
-- [x] 18. 🟡 Add auto-scroll to the conversation panel so new messages are always visible (JS)
-- [ ] 19. 🟡 Add a typing indicator animation when Reachy is processing a response (CSS + JS)
-- [ ] 20. 🔴 Add a real-time vitals mini-dashboard — heart rate, SpO2, temperature in gauge widgets (HTML + JS + CSS)
-- [ ] 21. 🔴 Add a daily timeline showing all events (alerts, meds, conversations) on a horizontal bar (JS + CSS)
-- [ ] 22. 🔴 Add drag-and-drop reordering of dashboard cards so caregivers can customize layout (JS)
-- [ ] 23. 🔴 Add a "night mode" that dims the screen and uses larger fonts for overnight shifts (CSS + JS)
+- [x] 13. Sound direction head tracking — use `get_DoA()` to turn toward whoever is speaking
+- [x] 14. Object look-at — detect objects in camera, patient says "look at the cup" and Reachy turns to it using `look_at_image()`
+- [x] 15. Room scanning — Reachy slowly looks around the room using `look_at_world()` and describes what it sees
+- [x] 16. Multi-person awareness — detect multiple faces, track who's speaking, address them by position
+- [ ] 17. Point-and-describe — patient points at something, Reachy follows the point direction and describes it
+- [x] 18. Spatial memory — remember where objects are in the room ("Your glasses are on the table to your left")
+- [x] 19. Body rotation for multi-person — use `set_target_body_yaw()` to face different people in the room
+- [x] 20. Distance awareness — estimate how far the patient is and adjust voice volume accordingly
+- [x] 21. Room change detection — notice when furniture moves or new objects appear ("Oh, you rearranged!")
+- [x] 22. Window/light awareness — detect if it's bright or dark in the room and comment on it
 
-## 🟦 patients.html (15 tasks)
+## 🤸 Physical Interaction & Games (23-38)
 
-- [x] 24. 🟢 Add alternating row colors to the patient table — every other row slightly different (CSS)
-- [x] 25. 🟢 Style the mood badges with emoji instead of just text (JS)
-- [ ] 26. 🟢 Add a patient avatar circle with their initials when no photo exists (HTML + CSS + JS)
-- [x] 27. 🟡 Add a "sort by" dropdown — sort by name, room, mood, or last active (HTML + JS)
-- [x] 28. 🟡 Show a confirmation toast notification after adding a patient instead of just reloading (JS + CSS)
-- [x] 29. 🟡 Add a patient count badge in the nav link, like "Patients (5)" (JS)
-- [x] 30. 🟡 Add a search/filter bar that filters patients by name or room number as you type (HTML + JS)
-- [x] 31. 🟡 Add a patient detail slide-out panel that shows full info when you click a row (HTML + JS + CSS)
-- [ ] 32. 🔴 Add inline editing — click a patient's room or conditions to edit it directly in the table (JS)
-- [ ] 33. 🔴 Add a "print patient summary" button that opens a print-friendly view (JS + CSS)
-- [ ] 34. 🔴 Add a patient card view toggle — switch between table and card grid layout (HTML + JS + CSS)
-- [ ] 35. 🔴 Add patient photo upload with preview (HTML + JS + Python)
-- [ ] 36. 🔴 Add a patient timeline showing their mood, meds, and conversations over the past 24h (JS + CSS)
-- [ ] 37. 🔴 Add patient tags/labels (e.g. "fall risk", "diabetic", "new") with color coding (HTML + JS + CSS)
-- [ ] 38. 🔴 Add a patient comparison view — select 2 patients and see their stats side by side (JS + CSS)
+- [x] 23. Teach Reachy moves — enable gravity compensation, patient physically poses Reachy, record with `start_recording()`, play back with `play_move()`
+- [x] 24. Emotion charades — Reachy acts out an emotion with body language, patient guesses
+- [x] 25. Simon Says — Reachy does a move, patient copies, then patient does a move, Reachy copies via head mirror
+- [x] 26. Rhythm game — Reachy taps a beat with antennas, patient claps along, difficulty increases
+- [x] 27. Antenna semaphore — teach a simple antenna language (both up = happy, one up = question, etc.)
+- [x] 28. Choreographed performances — `play_move()` with synced audio for dance routines
+- [x] 29. Reaction time game — Reachy moves suddenly, patient says "now!" as fast as possible, track reaction time
+- [x] 30. Head gesture language — patient defines custom gestures ("two wiggles means I love you")
+- [x] 31. Puppet mode — patient controls Reachy in real-time through gravity compensation, like a puppet
+- [x] 32. Bump/shake detection — use IMU to detect if someone touches/bumps Reachy, react ("That tickles!")
+- [x] 33. Tilt game — Reachy tilts its head and patient has to match the angle, scored by camera
+- [x] 34. Antenna counting game — Reachy raises antennas a certain number of times, patient counts
+- [x] 35. Follow the leader — alternate between Reachy leading moves and patient leading (using head mirror)
+- [x] 36. Freeze dance — play music, Reachy dances, music stops, both freeze, camera checks if patient moved
+- [x] 37. Gentle exercise coach — Reachy demonstrates head/neck stretches, patient follows along
+- [x] 38. Morning stretch routine — guided stretching with Reachy demonstrating each move
 
-## 🟦 schedule.html (10 tasks)
+## 📷 Camera Intelligence (39-52)
 
-- [x] 39. 🟢 Add color coding to the timeline dots — green for delivered, blue for upcoming, gray for future (CSS)
-- [x] 40. 🟢 Style the quick schedule buttons with more spacing and a subtle border (CSS)
-- [ ] 41. 🟡 Add a "next up" banner at the top showing the next scheduled message and countdown (JS + CSS)
-- [ ] 42. 🟡 Add drag-to-reorder on the schedule table rows (JS)
-- [ ] 43. 🟡 Show a preview of what Reachy will say when you hover over a scheduled message (CSS tooltip)
-- [ ] 44. 🟡 Add a "duplicate schedule" button that copies an existing schedule entry (JS)
-- [ ] 45. 🔴 Add a weekly calendar grid view as an alternative to the timeline (HTML + JS + CSS)
-- [ ] 46. 🔴 Add recurring schedule patterns — "every Monday and Wednesday" not just daily/weekdays (HTML + JS + Python)
-- [ ] 47. 🔴 Add a schedule conflict detector — warn if two messages overlap within 5 minutes (JS)
-- [ ] 48. 🔴 Add schedule templates — "Morning Routine", "Evening Wind-down", "Med Reminders" (HTML + JS)
+- [x] 39. Object show-and-tell — patient holds up an object, Reachy identifies and talks about it
+- [x] 40. Facial expression reading — use camera to read patient's face expression for more accurate mood detection
+- [x] 41. Room awareness narration — "I can see your cozy chair, the window with sunlight, and some books"
+- [x] 42. Clothing compliments — detect what the patient is wearing and compliment them
+- [x] 43. Meal detection — see when the patient is eating and log it to nutrition tracker
+- [x] 44. Fall detection via camera — detect if the patient falls and alert caregiver immediately
+- [x] 45. Visitor recognition — learn faces of family members and greet them by name when they visit
+- [x] 46. Pet detection — notice when a pet is in the room and comment on it
+- [x] 47. Plant/garden monitoring — patient shows their plants, Reachy tracks growth over time
+- [x] 48. Art appreciation — patient shows artwork or photos, Reachy gives thoughtful commentary
+- [x] 49. Medication verification — patient shows their pill, Reachy confirms it looks right
+- [x] 50. Weather-from-window — look out the window and describe the weather it sees
+- [x] 51. Activity detection — detect if patient is reading, knitting, watching TV and comment naturally
+- [x] 52. Smile counter — count how many times the patient smiled today, share the count at end of session
 
-## 🟦 reports.html (10 tasks)
+## 🧠 Conversation & Intelligence (53-68)
 
-- [x] 49. 🟢 Add loading spinners while the charts are fetching data (CSS)
-- [x] 50. 🟢 Style the report items with a left color border based on mood (CSS + JS)
-- [ ] 51. 🟡 Add a date range picker that filters the report data (HTML + JS)
-- [ ] 52. 🟡 Add a "print report" button that opens a clean print view (JS + CSS)
-- [ ] 53. 🟡 Animate the chart bars so they grow from 0 to their value on load (CSS transitions)
-- [ ] 54. 🟡 Add a "compare periods" toggle — this week vs last week side by side (JS)
-- [ ] 55. 🔴 Add a trend arrow next to each vital showing if it's going up or down compared to yesterday (JS + Python)
-- [ ] 56. 🔴 Add a heatmap showing conversation frequency by hour of day and day of week (JS + CSS)
-- [ ] 57. 🔴 Add an AI-generated summary paragraph at the top using GPT to describe the week (JS + Python)
-- [ ] 58. 🔴 Add PDF export for the full report with charts rendered as images (JS + Python)
+- [x] 53. Life story builder — compile conversations into a structured life narrative over many sessions
+- [x] 54. Daily journal — auto-generate a journal entry from each day's conversations for family to read
+- [x] 55. Relationship map — build a visual family tree from mentioned names and relationships
+- [x] 56. Conversation replay — store timestamped turns, build a player UI to replay past sessions
+- [x] 57. Dream journal — if patient describes a dream, log it and reference it later
+- [x] 58. Wish list tracker — "I wish I could..." statements get saved and shared with family
+- [x] 59. Advice book — collect wisdom and advice the patient shares, compile into a "book"
+- [x] 60. Recipe collector — when patient describes a recipe, save it structured with ingredients and steps
+- [x] 61. Joke library — learn which jokes the patient tells and never repeat them back, but laugh every time
+- [x] 62. Song request memory — remember their favorite songs and offer to play them at the right moments
+- [x] 63. Holiday awareness — know what holiday it is and bring it up naturally with relevant memories
+- [x] 64. Birthday tracker — remember birthdays of mentioned family members, remind patient when they're coming up
+- [x] 65. "This day in history" — share an interesting historical event from today's date
+- [x] 66. Compliment generator — give genuine, specific compliments based on what Reachy knows about them
+- [x] 67. Worry jar — patient shares worries, Reachy "puts them in the jar" and checks back later
+- [x] 68. Gratitude chain — build on previous gratitude sessions, creating a growing list over weeks
 
-## 🟦 medications.html (10 tasks)
+## 👨‍👩‍👧 Family & Caregiver (69-80)
 
-- [ ] 59. 🟢 Add a color indicator — green dot for taken, red for missed, yellow for upcoming (CSS)
-- [ ] 60. 🟢 Add a "next dose" countdown timer for each medication (JS)
-- [ ] 61. 🟡 Add a medication adherence percentage bar for each med (JS + CSS)
-- [ ] 62. 🟡 Add a "log dose" button that records when a medication was taken with timestamp (HTML + JS)
-- [ ] 63. 🟡 Add medication interaction warnings — flag if two meds shouldn't be taken together (JS)
-- [ ] 64. 🟡 Add a medication history timeline showing taken/missed over the past 7 days (JS + CSS)
-- [ ] 65. 🔴 Add medication refill tracking — show days until refill needed based on doses remaining (JS + Python)
-- [ ] 66. 🔴 Add a medication schedule calendar showing all meds on a weekly grid (HTML + JS + CSS)
-- [ ] 67. 🔴 Add barcode/QR scanning to quickly log a medication (JS — camera API)
-- [ ] 68. 🔴 Add medication photo upload so caregivers can identify pills visually (HTML + JS + Python)
+- [x] 69. Family portal — separate dashboard login for family to leave voice messages and see highlights
+- [x] 70. Voice message relay — family records a message on dashboard, Reachy plays it at the right moment
+- [x] 71. Photo sharing — family uploads photos to dashboard, Reachy shows them via camera description
+- [x] 72. Daily highlight reel — auto-generate a 3-sentence summary of the best moments for family
+- [x] 73. Caregiver shift briefing — when a new caregiver logs in, Reachy summarizes the patient's day
+- [x] 74. Family Q&A — family submits questions ("Ask mom about her garden"), Reachy works them into conversation
+- [x] 75. Milestone alerts — notify family when patient hits milestones (100th conversation, 30-day streak)
+- [x] 76. Mood report email — daily/weekly mood summary emailed to family
+- [x] 77. Emergency contact chain — if distress detected and caregiver doesn't respond, escalate to family
+- [x] 78. Visitor log — Reachy notes when visitors come (via face detection) and logs it
+- [x] 79. Care plan integration — pull care plan from dashboard and weave tasks into conversation naturally
+- [x] 80. Multi-patient handoff — when Reachy moves to a different patient, smooth context switch
 
-## 🟦 facilities.html (8 tasks)
+## 🎨 Dashboard & UI (81-92)
 
-- [x] 69. 🟢 Add a hover effect on facility cards — slight scale up and shadow (CSS)
-- [x] 70. 🟢 Make the address a clickable Google Maps link (JS)
-- [ ] 71. 🟡 Add a patient count per facility by cross-referencing the patients API (JS)
-- [ ] 72. 🟡 Add an "edit facility" modal that pre-fills with existing data (HTML + JS)
-- [ ] 73. 🟡 Add facility status indicators — green for active, yellow for maintenance, red for issues (CSS + JS)
-- [ ] 74. 🔴 Add a simple map view using an embedded iframe from OpenStreetMap (HTML + JS)
-- [ ] 75. 🔴 Add facility capacity tracking — show occupied vs total beds (JS + CSS)
-- [ ] 76. 🔴 Add a facility dashboard showing aggregate stats for all patients at that location (JS + Python)
+- [x] 81. Live view page — watch conversation in real-time with camera feed, mood indicator, engagement score
+- [x] 82. Conversation search — full-text search across all past conversations
+- [x] 83. Mood calendar — calendar view showing dominant mood for each day, click to see details
+- [x] 84. Topic cloud — word cloud visualization of most-discussed topics
+- [x] 85. Relationship graph — visual network of mentioned people and their connections
+- [x] 86. Session comparison — compare two sessions side by side (engagement, mood, topics)
+- [x] 87. Export life story — generate a PDF of the patient's life story from collected conversations
+- [x] 88. Customizable dashboard widgets — drag-and-drop widgets for different data views
+- [x] 89. Mobile PWA improvements — push notifications for alerts, offline mode, native feel
+- [x] 90. Dark/light theme per user — save theme preference per login
+- [x] 91. Patient profile editor — edit patient details, birth year, preferences, photo from dashboard
+- [x] 92. Activity scheduler — visual calendar to schedule activities, reminders, and routines
 
-## 🟦 family.html (10 tasks)
+## 🔧 Technical & Infrastructure (93-100)
 
-- [x] 77. 🟢 Add quick message buttons like "I love you", "See you soon", "Thinking of you" (HTML + JS)
-- [x] 78. 🟢 Add emoji reactions to the mood display — bigger emoji, more color (CSS)
-- [x] 79. 🟡 Add relative timestamps to messages — "sent 3 hours ago" (JS)
-- [x] 80. 🟡 Add a character counter on the message textarea showing remaining chars (JS)
-- [ ] 81. 🟡 Add a "read receipt" indicator on messages — show if Reachy delivered it (JS + CSS)
-- [ ] 82. 🟡 Add a "schedule visit" button that creates a calendar entry (HTML + JS)
-- [ ] 83. 🔴 Add a photo/image upload that sends as a family message (HTML + JS + Python)
-- [ ] 84. 🔴 Add a video call button that opens a WebRTC connection to the robot's camera (JS + Python)
-- [ ] 85. 🔴 Add a family activity feed showing what the patient did today (conversations, exercises, moods) (JS)
-- [ ] 86. 🔴 Add a "memory book" section where family can upload photos with captions for reminiscence (HTML + JS + Python)
-
-## 🟦 history.html (8 tasks)
-
-- [ ] 87. 🟢 Add alternating background colors to mood history rows (CSS)
-- [x] 88. 🟢 Add emoji next to each mood entry — 😊 for joy, 😢 for sadness, etc. (JS)
-- [ ] 89. 🟡 Add a date filter — show history for today, this week, this month, or custom range (HTML + JS)
-- [ ] 90. 🟡 Add a mood distribution pie chart using CSS-only (no library) (HTML + CSS + JS)
-- [ ] 91. 🟡 Add a "mood streak" counter — how many consecutive happy days (JS)
-- [x] 92. 🔴 Add a conversation replay — click a history entry to see the full conversation from that session (JS + Python)
-- [ ] 93. 🔴 Add a mood prediction indicator — "based on patterns, tomorrow might be a tough day" (JS + Python)
-- [ ] 94. 🔴 Add export to CSV for the mood history data (JS)
-
-## 🟦 settings.html (10 tasks)
-
-- [x] 95. 🟢 Add a version number and build date at the bottom of the page (HTML)
-- [ ] 96. 🟡 Build the user management table — list users from `/api/users` with role badges (HTML + JS)
-- [ ] 97. 🟡 Add a password change form using the existing `/api/change-password` endpoint (HTML + JS)
-- [ ] 98. 🟡 Add a dark/light theme toggle that saves to localStorage and swaps CSS variables (JS + CSS)
-- [ ] 99. 🟡 Add notification preferences — choose which alert types trigger sounds/push (HTML + JS)
-- [ ] 100. 🔴 Add an "Add User" modal with username, password, role, and name fields (HTML + JS)
-- [ ] 101. 🔴 Add a data backup/restore feature — export all settings as JSON, import from file (JS + Python)
-- [ ] 102. 🔴 Add an audit log viewer showing who changed what and when (HTML + JS + Python)
-- [ ] 103. 🔴 Add robot configuration panel — set voice, language, personality from the dashboard (HTML + JS + Python)
-- [ ] 104. 🔴 Add a system health monitor — show Supabase connection, robot status, API latency (JS + Python)
-
-## 🟦 login.html (6 tasks)
-
-- [x] 105. 🟢 Add a fade-in animation on the login box (CSS)
-- [x] 106. 🟢 Add a show/hide password toggle eye icon (HTML + JS)
-- [x] 107. 🟡 Add "remember me" that saves the username to localStorage (HTML + JS)
-- [x] 108. 🟡 Shake the login box when credentials are wrong instead of just showing text (CSS + JS)
-- [ ] 109. 🟡 Add a loading spinner on the login button while authenticating (JS + CSS)
-- [ ] 110. 🔴 Add two-factor authentication with a TOTP code input (HTML + JS + Python)
-
-## 🟦 _base.html / global (12 tasks)
-
-- [ ] 111. 🟡 Add a notification bell icon in the nav that shows unread alert count as a red badge (HTML + JS + CSS)
-- [ ] 112. 🟡 Make the nav responsive — hamburger menu on mobile (CSS + JS)
-- [ ] 113. 🟡 Add breadcrumbs below the nav showing current page path (HTML + CSS + JS)
-- [ ] 114. 🟡 Add a global toast notification system — success/error/info toasts that auto-dismiss (JS + CSS)
-- [ ] 115. 🟡 Add a "back to top" floating button that appears when you scroll down (HTML + CSS + JS)
-- [ ] 116. 🔴 Add keyboard shortcuts — press "?" to show a help overlay with all shortcuts (JS + CSS)
-- [ ] 117. 🔴 Add a global command palette (Cmd+K) that lets you search and jump to any page (JS + CSS)
-- [ ] 118. 🔴 Add a sidebar layout option as an alternative to the top nav (HTML + CSS + JS)
-- [ ] 119. 🔴 Add page transition animations when navigating between pages (CSS + JS)
-- [ ] 120. 🔴 Add offline support — cache pages and show cached data when network is down (JS — Service Worker)
-- [ ] 121. 🔴 Add a global search that searches across patients, alerts, conversations, and meds (JS + Python)
-- [ ] 122. 🔴 Add multi-language support for all dynamic content (not just labels) using the i18n system (JS + Python)
-
-## 🟦 camera.html (6 tasks)
-
-- [x] 123. 🟢 Add a "camera offline" placeholder image instead of a broken frame (HTML + CSS)
-- [ ] 124. 🟡 Add a snapshot button that captures the current frame and saves it (JS)
-- [x] 125. 🟡 Add a fullscreen toggle for the camera feed (JS)
-- [ ] 126. 🟡 Add a timestamp overlay on the camera feed showing current date/time (CSS + JS)
-- [ ] 127. 🔴 Add motion detection indicators — highlight when movement is detected (JS)
-- [ ] 128. 🔴 Add a recording button that saves a clip of the camera feed (JS + Python)
-
-## 🟦 Python backend — app.py / db.py (20 tasks)
-
-- [ ] 129. 🟡 Add a `/api/patients/<id>` GET endpoint that returns a single patient with their notes and vitals (Python)
-- [ ] 130. 🟡 Add a `/api/patients/<id>` PUT endpoint for updating patient info (Python)
-- [ ] 131. 🟡 Add a `/api/dashboard/summary` endpoint that returns all dashboard data in one call (Python)
-- [ ] 132. 🟡 Add rate limiting to the API endpoints to prevent abuse (Python)
-- [ ] 133. 🟡 Add request logging middleware that logs all API calls with timing (Python)
-- [ ] 134. 🟡 Add input validation on all POST endpoints — reject missing/invalid fields (Python)
-- [ ] 135. 🔴 Add a `/api/export/pdf` endpoint that generates a PDF report using reportlab (Python)
-- [ ] 136. 🔴 Add WebSocket support using flask-socketio for true real-time updates instead of SSE (Python + JS)
-- [ ] 137. 🔴 Add a `/api/ai/summary` endpoint that uses GPT to generate a natural language patient summary (Python)
-- [ ] 138. 🔴 Add a `/api/ai/recommendations` endpoint that suggests care actions based on patient data (Python)
-- [ ] 139. 🔴 Add database migrations so schema changes don't require wiping data (Python)
-- [ ] 140. 🔴 Add a `/api/alerts/escalate` endpoint that sends critical alerts via email/SMS (Python)
-- [ ] 141. 🔴 Add a `/api/patients/<id>/timeline` endpoint returning all events for a patient chronologically (Python)
-- [ ] 142. 🔴 Add role-based access control — nurses see different things than admins (Python)
-- [ ] 143. 🔴 Add a `/api/shifts` endpoint for managing caregiver shift schedules (Python)
-- [ ] 144. 🔴 Add a `/api/incidents` endpoint for logging and tracking care incidents (Python)
-- [ ] 145. 🔴 Add automated daily report generation that runs at midnight via a background thread (Python)
-- [ ] 146. 🔴 Add a `/api/vitals/trends` endpoint that returns vitals data formatted for charting (Python)
-- [ ] 147. 🔴 Add a `/api/search` global search endpoint that searches across all data types (Python)
-- [ ] 148. 🔴 Add API documentation page at `/api/docs` using auto-generated OpenAPI spec (Python)
-
-## 🟦 New pages to build from scratch (12 tasks)
-
-- [ ] 149. 🔴 Build a **Vitals Dashboard** page — real-time heart rate, SpO2, BP charts with alert thresholds (HTML + JS + CSS)
-- [ ] 150. 🔴 Build a **Shift Handoff** page — outgoing caregiver writes notes, incoming caregiver acknowledges (HTML + JS + Python)
-- [ ] 151. 🔴 Build a **Incident Report** page — form to log falls, medication errors, behavioral incidents (HTML + JS + Python)
-- [ ] 152. 🔴 Build a **Care Plan** page — editable care goals, interventions, and progress tracking (HTML + JS + Python)
-- [ ] 153. 🔴 Build a **Communication Center** page — unified inbox for family messages, caregiver notes, robot alerts (HTML + JS)
-- [ ] 154. 🔴 Build a **Robot Control** page — send commands to Reachy, change voice/personality, trigger actions (HTML + JS + Python)
-- [ ] 155. 🔴 Build a **Analytics** page — advanced charts, trends, predictions, exportable dashboards (HTML + JS + Python)
-- [ ] 156. 🔴 Build a **Knowledge Base** page — view the patient's knowledge graph visually as a network diagram (HTML + JS)
-- [ ] 157. 🔴 Build a **Memory Browser** page — search and browse all of Reachy's memories about a patient (HTML + JS + Python)
-- [ ] 158. 🔴 Build a **Conversation Replay** page — play back past conversations with timestamps and emotions (HTML + JS + Python)
-- [ ] 159. 🔴 Build a **Alerts Management** page — configure alert rules, escalation paths, notification preferences (HTML + JS + Python)
-- [ ] 160. 🔴 Build a **Multi-Patient Dashboard** — overview of all patients at once with status cards (HTML + JS + CSS)
-
----
-
-**Total: 160 tasks**
-- 🟢 Easy: 28 tasks
-- 🟡 Medium: 62 tasks  
-- 🔴 Hard: 70 tasks
-
-Pick a number and let's build it together!
+- [ ] 93. Auto-deploy to Railway — CI/CD pipeline deploys on merge to main
+- [ ] 94. Type hints for remaining files — `realtime_conversation.py`, `brain.py`, `app.py`
+- [ ] 95. Offline mode — fallback to Ollama + local Whisper when internet is down
+- [ ] 96. Multi-patient support — real patient switching with isolated data per patient
+- [ ] 97. WebRTC video calling — real browser-to-browser video calls through the dashboard
+- [ ] 98. Rate limiting — protect API endpoints from abuse
+- [ ] 99. Database backup system — automated Supabase backups with restore capability
+- [ ] 100. Performance monitoring — track response times, API latency, and system health metrics

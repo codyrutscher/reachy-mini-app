@@ -1,7 +1,7 @@
 """Tests for the sing-along module."""
 
 import pytest
-from singalong import SingAlong, is_singalong_trigger, SONGS, _SINGALONG_TRIGGERS
+from activities.singalong import SingAlong, is_singalong_trigger, SONGS, _SINGALONG_TRIGGERS
 
 
 class TestSingalongTrigger:

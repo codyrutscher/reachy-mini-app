@@ -1,9 +1,16 @@
-const CACHE_NAME = 'reachy-care-v1';
+const CACHE_NAME = 'reachy-care-v2';
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
+];
+
+// Pages to cache for offline access
+const PAGE_CACHE = 'reachy-pages-v1';
+const CACHEABLE_PAGES = [
+  '/', '/patients', '/history', '/family', '/live',
+  '/medications', '/schedule', '/reports', '/activity',
 ];
 
 // Install — cache static assets
@@ -26,16 +33,34 @@ self.addEventListener('activate', event => {
 
 // Fetch — network first, fall back to cache
 self.addEventListener('fetch', event => {
-  // Skip SSE and API requests
+  // Skip SSE and API POST requests
   if (event.request.url.includes('/stream') ||
-      event.request.url.includes('/api/')) {
+      (event.request.url.includes('/api/') && event.request.method === 'POST')) {
     return;
   }
 
+  // API GET requests — network first, cache fallback for offline
+  if (event.request.url.includes('/api/') && event.request.method === 'GET') {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(PAGE_CACHE).then(cache => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request).then(r => r || new Response('{"error":"offline"}', {
+          headers: {'Content-Type': 'application/json'}
+        })))
+    );
+    return;
+  }
+
+  // Pages and static assets — network first, cache fallback
   event.respondWith(
     fetch(event.request)
       .then(response => {
-        // Cache successful GET responses
         if (response.ok && event.request.method === 'GET') {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));

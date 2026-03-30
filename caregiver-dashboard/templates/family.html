@@ -33,6 +33,15 @@
       </div>
 
       <button class="btn btn-primary" onclick="sendFamilyMsg()">Send Message via Reachy</button>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="card-muted" style="margin-bottom:8px;">Or record a voice message</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-ghost" id="voiceRecBtn" onclick="toggleVoiceRec()">🎤 Record</button>
+          <span id="voiceRecStatus" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+        <audio id="voicePreview" style="display:none;margin-top:8px;width:100%;" controls></audio>
+        <button class="btn btn-primary" id="voiceSendBtn" style="display:none;margin-top:8px;" onclick="sendVoiceMsg()">Send Voice Message</button>
+      </div>
     </div>
 
     <div class="card">
@@ -80,6 +89,20 @@
       <div id="moodInfo" style="max-height:400px;overflow-y:auto;"></div>
     </div>
   </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">📔 Daily Journal</div><div class="card-muted">Auto-generated from conversations</div></div>
+      <div id="journalEntries" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="empty" id="journalEmpty"><div class="empty-icon">📔</div><p>No journal entries yet.</p></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="card-title">⭐ Wishes &amp; Wisdom</div></div>
+      <div id="wishesWisdom" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="empty" id="wishesEmpty"><div class="empty-icon">⭐</div><p>Nothing collected yet.</p></div>
+    </div>
+  </div>
   <div class="card">
     <div class="card-header"><div class="card-title">🩺 Latest Vitals</div></div>
     <div id="vitalsInfo" class="grid-4" style="padding:10px 0;"></div>
@@ -106,13 +129,16 @@ function timeAgo(dateStr){
 }
 
 async function loadAll(){
-  var [msgs,moods,status,vitals]=await Promise.all([
+  var [msgs,moods,status,vitals,highlights]=await Promise.all([
     fetch('/api/family/messages').then(r=>r.json()),
     fetch('/api/mood-history').then(r=>r.json()),
     fetch('/api/status').then(r=>r.json()),
     fetch('/api/vitals/latest').then(r=>r.json()),
+    fetch('/api/family/highlights').then(r=>r.json()).catch(()=>({})),
   ]);
   renderMessages(msgs);renderMoods(moods);renderSummary(status,moods);renderVitals(vitals);
+  renderJournal(highlights.journal||[]);
+  renderWishesWisdom(highlights.wishes||[],highlights.advice||[]);
 }
 
 function renderMessages(msgs){
@@ -199,6 +225,34 @@ async function sendFamilyMsg(){
   loadAll();
 }
 
+function renderJournal(entries){
+  var el=document.getElementById('journalEntries'),empty=document.getElementById('journalEmpty');
+  if(!entries||!entries.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=entries.map(function(e){
+    var emoji=MOOD_EMOJI[e.mood]||'📝';
+    return '<div style="padding:12px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="display:flex;justify-content:space-between;margin-bottom:6px;">'+
+      '<span style="font-size:12px;font-weight:600;">'+emoji+' '+e.date+'</span>'+
+      '<span style="font-size:11px;color:var(--muted);">'+e.mood+'</span></div>'+
+      '<div style="font-size:13px;line-height:1.6;color:var(--text);">'+e.entry+'</div></div>';
+  }).join('');
+}
+
+function renderWishesWisdom(wishes,advice){
+  var el=document.getElementById('wishesWisdom'),empty=document.getElementById('wishesEmpty');
+  var items=[];
+  wishes.forEach(function(w){items.push({icon:'🌟',text:w.wish,date:w.date,type:'wish'});});
+  advice.forEach(function(a){items.push({icon:'💡',text:a.content,date:a.date,type:'wisdom'});});
+  if(!items.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=items.slice(0,15).map(function(i){
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="font-size:13px;">'+i.icon+' '+i.text+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+i.type+' &middot; '+timeAgo(i.date)+'</div></div>';
+  }).join('');
+}
+
 function retryFamCam(){
   var img=document.getElementById('famCamStream');
   img.style.display='block';
@@ -208,5 +262,55 @@ function retryFamCam(){
 }
 
 loadAll();
+
+// ── Voice recording ──
+var _mediaRec=null, _audioChunks=[], _audioBlob=null;
+
+async function toggleVoiceRec(){
+  var btn=document.getElementById('voiceRecBtn');
+  var status=document.getElementById('voiceRecStatus');
+  if(_mediaRec && _mediaRec.state==='recording'){
+    _mediaRec.stop();
+    btn.textContent='🎤 Record';
+    status.textContent='Processing...';
+    return;
+  }
+  try{
+    var stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    _mediaRec=new MediaRecorder(stream);
+    _audioChunks=[];
+    _mediaRec.ondataavailable=function(e){_audioChunks.push(e.data);};
+    _mediaRec.onstop=function(){
+      stream.getTracks().forEach(function(t){t.stop();});
+      _audioBlob=new Blob(_audioChunks,{type:'audio/webm'});
+      var url=URL.createObjectURL(_audioBlob);
+      var preview=document.getElementById('voicePreview');
+      preview.src=url;preview.style.display='block';
+      document.getElementById('voiceSendBtn').style.display='inline-block';
+      status.textContent='Ready to send';
+    };
+    _mediaRec.start();
+    btn.textContent='⏹ Stop';
+    status.textContent='Recording...';
+  }catch(e){status.textContent='Microphone access denied';}
+}
+
+async function sendVoiceMsg(){
+  if(!_audioBlob)return;
+  var name=document.getElementById('familyName').value.trim()||'Family';
+  var reader=new FileReader();
+  reader.onloadend=async function(){
+    var b64=reader.result.split(',')[1];
+    await fetch('/api/family/voice-message',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({audio:b64,family_member:name})});
+    document.getElementById('voicePreview').style.display='none';
+    document.getElementById('voiceSendBtn').style.display='none';
+    document.getElementById('voiceRecStatus').textContent='Sent!';
+    _audioBlob=null;
+    loadAll();
+  };
+  reader.readAsDataURL(_audioBlob);
+}
 </script>
 {% endblock %}

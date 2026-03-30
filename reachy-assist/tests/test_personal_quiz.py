@@ -1,7 +1,7 @@
 """Tests for the personalized quiz module."""
 
 import pytest
-from personal_quiz import PersonalQuiz, is_quiz_trigger, _make_hint, _QUIZ_TRIGGERS
+from activities.personal_quiz import PersonalQuiz, is_quiz_trigger, _make_hint, _QUIZ_TRIGGERS
 
 
 class TestQuizTrigger:

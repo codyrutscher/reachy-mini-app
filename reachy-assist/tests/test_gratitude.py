@@ -1,7 +1,7 @@
 """Tests for the gratitude practice module."""
 
 import pytest
-from gratitude import GratitudeSession
+from activities.gratitude import GratitudeSession
 
 
 class TestGratitudeSession:

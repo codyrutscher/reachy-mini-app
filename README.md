@@ -1,6 +1,272 @@
 # Reachy Mini — Accessibility Assistant
 
+[![CI](https://github.com/codyrutscher/reachy-mini-app/actions/workflows/ci.yml/badge.svg)](https://github.com/codyrutscher/reachy-mini-app/actions/workflows/ci.yml)
+
 A comprehensive accessibility assistant built on the **Reachy Mini** robot platform, designed to support elderly and disabled individuals through voice interaction, emotional awareness, proactive care, and caregiver coordination.
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- macOS (required for `afplay` audio playback and `say` TTS fallback)
+- Python 3.12+
+- A microphone (built-in or USB)
+- Speakers or headphones
+- An OpenAI API key (for the brain, voice, and memory features)
+- A Supabase account (free tier — for cloud database + vector memory)
+
+### 1. Robot Setup (reachy-assist)
+
+```bash
+cd reachy-assist
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `reachy-assist/.env`:
+
+```env
+OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
+SUPABASE_DB_URL=postgresql://postgres.YOURREF:YOURPASSWORD@aws-0-us-west-2.pooler.supabase.com:6543/postgres
+REACHY_VOICE=nova
+DASHBOARD_URL=http://localhost:5555
+WEATHER_CITY=auto
+```
+
+Test in text mode first:
+```bash
+python run.py --text --brain openai
+```
+
+Run with voice (mic + speaker):
+```bash
+python run.py --brain openai
+```
+
+### 2. Dashboard Setup (caregiver-dashboard)
+
+Open a second terminal:
+
+```bash
+cd caregiver-dashboard
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `caregiver-dashboard/.env`:
+
+```env
+SUPABASE_DB_URL=postgresql://postgres.YOURREF:YOURPASSWORD@aws-0-us-west-2.pooler.supabase.com:6543/postgres
+```
+
+Start the dashboard:
+```bash
+python app.py
+```
+
+Open http://localhost:5555 — login: `admin` / `admin`
+
+### 3. Connect Them
+
+Run both at the same time in separate terminals:
+
+| Terminal 1 (Dashboard) | Terminal 2 (Robot) |
+|---|---|
+| `cd caregiver-dashboard && source .venv/bin/activate && python app.py` | `cd reachy-assist && source .venv/bin/activate && python run.py --brain openai` |
+
+The robot automatically connects to the dashboard at `http://localhost:5555`. Type a message in the dashboard chat → Reachy speaks it aloud. Talk to Reachy → conversation appears in the dashboard.
+
+---
+
+## Where to Get API Keys
+
+| Variable | Where to find it |
+|---|---|
+| `OPENAI_API_KEY` | https://platform.openai.com/api-keys → Create new secret key |
+| `SUPABASE_DB_URL` | Supabase Dashboard → Project Settings → Database → Connection string → URI. Use the "Transaction" pooler (port 6543). URL-encode special characters in the password (e.g. `@` becomes `%40`). |
+
+---
+
+## Supabase Database Setup
+
+Supabase gives you a free PostgreSQL database with vector search. This powers all the smart memory features.
+
+### Create a project
+
+1. Go to https://supabase.com and sign up (free)
+2. Click "New Project", set a database password, pick a region
+3. Wait ~1 minute for it to spin up
+
+### Create the tables
+
+Go to the SQL Editor in Supabase and run this:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS bot_conversation_log (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    speaker TEXT DEFAULT 'unknown', message TEXT NOT NULL,
+    emotion TEXT DEFAULT 'neutral', created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_mood_log (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    mood TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_mentions (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    category TEXT NOT NULL, mention TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_topics (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    topic TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_conversation_dates (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    date TEXT NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_streaks (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    streak_date TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_patient_facts (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    fact TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_patient_profile (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default' UNIQUE,
+    name TEXT, favorite_topic TEXT, personality_notes TEXT,
+    updated_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_cognitive_scores (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    game TEXT NOT NULL, score INTEGER NOT NULL, total INTEGER,
+    created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_exercise_log (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    exercise TEXT NOT NULL, duration_sec INTEGER, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_sleep_log (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    event TEXT NOT NULL, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_session_summaries (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    summary TEXT NOT NULL, mood TEXT, topics TEXT,
+    interaction_count INTEGER, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_weekly_reports (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    report TEXT NOT NULL, week_start TEXT, week_end TEXT,
+    created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_reminders (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    reminder TEXT NOT NULL, time TEXT, active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_caregiver_alerts (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    alert_type TEXT NOT NULL, message TEXT NOT NULL,
+    acknowledged BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_memory_vectors (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    content TEXT NOT NULL, embedding vector(1536),
+    speaker TEXT DEFAULT 'patient', emotion TEXT DEFAULT 'neutral',
+    emotion_weight REAL DEFAULT 1.0, topic TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_knowledge_entities (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    name TEXT NOT NULL, entity_type TEXT NOT NULL,
+    attributes JSONB DEFAULT '{}', created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_knowledge_relations (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    subject TEXT NOT NULL, relation TEXT NOT NULL, object TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0, created_at TIMESTAMP DEFAULT NOW());
+
+CREATE TABLE IF NOT EXISTS bot_temporal_patterns (
+    id SERIAL PRIMARY KEY, patient_id TEXT DEFAULT 'default',
+    pattern_type TEXT NOT NULL, description TEXT NOT NULL,
+    severity TEXT DEFAULT 'info', data JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW());
+
+CREATE INDEX IF NOT EXISTS idx_memory_vectors_embedding
+    ON bot_memory_vectors USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+```
+
+After running, you should see 18 tables in the Table Editor. They fill up automatically as you talk to Reachy.
+
+---
+
+## CLI Reference
+
+```bash
+# Text mode (testing, no mic/speaker needed)
+python run.py --text --brain openai
+
+# Voice mode with OpenAI brain (recommended)
+python run.py --brain openai
+
+# Voice mode with local Ollama (no API key needed)
+python run.py --brain ollama
+
+# Voice mode, no brain (preset responses only)
+python run.py
+
+# Spanish language
+python run.py --brain openai --language es
+
+# Disabled patient profile
+python run.py --brain openai --profile disabled
+
+# Enable webcam facial emotion detection
+python run.py --brain openai --face
+
+# All flags
+python run.py --brain openai --face --language en --profile elderly
+```
+
+| Flag | Options | Default |
+|---|---|---|
+| `--text` | (flag) | off (uses mic/speaker) |
+| `--brain` | `openai`, `ollama`, `none` | `none` |
+| `--emotion-backend` | `keywords`, `model` | `keywords` |
+| `--face` | (flag) | off |
+| `--language` | `en`, `es`, `fr`, `de`, `it`, `pt`, `zh`, `ja`, `ko` | `en` |
+| `--profile` | `elderly`, `disabled` | `elderly` |
+
+---
+
+## Conversation Commands
+
+| Say this | What happens |
+|---|---|
+| `help` | Lists all available commands |
+| `play music` / `play [song]` | Music player |
+| `tell me a joke` | Random joke |
+| `let's play a game` | Cognitive games menu |
+| `exercise` / `let's stretch` | Guided exercises |
+| `meditate` / `breathing exercise` | Guided meditation |
+| `tell me a story` | Story reader |
+| `remind me to [X] at [time]` | Set a reminder |
+| `check in` / `how am I doing` | Wellness check-in |
+| `weather` | Weather briefing |
+| `news` | News headlines |
+| `journal` | Voice diary entry |
+| `what day is it` | Date and time |
+| `goodnight` | Bedtime routine |
+| `I need help` / `emergency` | Triggers caregiver alert |
+| `turn on the lights` | Smart home control |
+
+---
 
 ## Project Structure
 
@@ -8,15 +274,19 @@ A comprehensive accessibility assistant built on the **Reachy Mini** robot platf
 ├── reachy-assist/              # Robot-side Python application
 │   ├── run.py                  # Entry point (CLI flags)
 │   ├── interaction.py          # Main interaction loop
-│   ├── robot.py                # Reachy Mini hardware control
-│   ├── speech.py               # Whisper STT + macOS TTS
+│   ├── speech.py               # Whisper STT + OpenAI TTS
+│   ├── brain.py                # LLM conversation with RAG memory
 │   ├── emotion.py              # Text-based emotion detection
 │   ├── face_emotion.py         # Webcam facial emotion (hsemotion)
-│   ├── brain.py                # LLM conversation with RAG memory
-│   ├── memory.py               # RAG memory system (vector store)
 │   ├── config.py               # Settings, prompts, thresholds
 │   ├── profiles.py             # Elderly vs disabled patient profiles
+│   ├── db_supabase.py          # Supabase database functions (18 tables)
+│   ├── vector_memory.py        # pgvector embeddings + semantic search
+│   ├── knowledge_graph.py      # GPT-powered entity/relationship extraction
+│   ├── temporal_patterns.py    # Mood trends, topic changes, health detection
+│   ├── followups.py            # Mention tracking + GPT smart extraction
 │   ├── autonomy.py             # Proactive behavior engine
+│   ├── robot.py                # Reachy Mini hardware control
 │   ├── movements.py            # 22 robot movement patterns
 │   ├── music.py                # Song library + melody/SFX player
 │   ├── reminders.py            # Medication & appointment reminders
@@ -27,31 +297,37 @@ A comprehensive accessibility assistant built on the **Reachy Mini** robot platf
 │   ├── exercises.py            # Guided physical exercises
 │   ├── stories.py              # Story/audiobook reader
 │   ├── meditation.py           # Guided meditation sessions
-│   ├── jokes.py                # Family-friendly joke teller
-│   ├── affirmations.py         # Daily affirmations & motivation
 │   ├── companion.py            # Conversation topic starters
-│   ├── calendar_tracker.py     # Appointment tracking
 │   ├── sleep_tracker.py        # Bedtime/wake logging
-│   ├── journal.py              # Voice journaling
-│   ├── news.py                 # News briefing reader
-│   ├── weather.py              # Weather briefing (wttr.in)
-│   ├── datetime_helper.py      # Date/time awareness
-│   ├── smart_home.py           # Home Assistant integration
 │   ├── vitals.py               # Bluetooth vitals monitoring
 │   ├── fall_detection.py       # MediaPipe pose-based fall detection
-│   ├── patient_model.py        # Cognitive/exercise/med trend tracking
+│   ├── smart_home.py           # Home Assistant integration
 │   ├── camera_stream.py        # MJPEG camera server (port 5556)
-│   ├── songs/                  # Song library (MP3/WAV/FLAC files)
-│   ├── sounds/                 # Generated WAV files (melodies + SFX)
+│   ├── memory.py               # Local RAG memory (SQLite fallback)
+│   ├── patient_model.py        # Cognitive/exercise/med trend tracking
+│   ├── sounds/                 # 33 WAV files (melodies + SFX)
 │   └── tests/                  # 149 unit tests
 │
 ├── caregiver-dashboard/        # Flask web dashboard (PWA)
 │   ├── app.py                  # Flask app with auth & REST API
 │   ├── db.py                   # SQLite database layer
 │   ├── db_postgres.py          # PostgreSQL/Supabase backend
-│   ├── i18n.py                 # Multi-language translations
+│   ├── i18n.py                 # Multi-language translations (en/es/fr/de)
 │   ├── static/                 # PWA manifest, service worker, icons
-│   └── templates/              # Jinja2 HTML templates (11 pages)
+│   └── templates/              # 12 Jinja2 HTML pages
+│       ├── _base.html          # Nav, SSE, global styles
+│       ├── dashboard.html      # Main view: alerts, camera, chat
+│       ├── patients.html       # Patient management
+│       ├── medications.html    # Medication scheduling
+│       ├── schedule.html       # Scheduled messages + timeline
+│       ├── history.html        # Mood + vitals charts
+│       ├── reports.html        # Analytics + generated reports
+│       ├── activity.html       # Activity log with filters
+│       ├── camera.html         # Full-screen camera view
+│       ├── facilities.html     # Facility management
+│       ├── family.html         # Family portal (send messages, see mood)
+│       ├── settings.html       # Notifications, database, about
+│       └── login.html          # Authentication
 │
 ├── Dockerfile.dashboard        # Docker image for dashboard
 ├── docker-compose.yml          # Docker Compose deployment
@@ -59,276 +335,262 @@ A comprehensive accessibility assistant built on the **Reachy Mini** robot platf
 └── .github/workflows/ci.yml    # GitHub Actions CI (test + lint)
 ```
 
+---
+
 ## Features
 
-### Robot Assistant (reachy-assist)
+### Robot Assistant
 
-#### Voice & Conversation
-- **Speech recognition** — OpenAI Whisper (small model) with 8-second continuous recording, silence trimming, and mic calibration
-- **Text-to-speech** — macOS native `say` command with per-language voice selection and configurable rate; pyttsx3 fallback
-- **LLM brain** — OpenAI GPT-4o-mini or Ollama (llama3.2) for natural conversation
-- **Emotion-adaptive strategies** — Conversation style changes based on dominant mood (shorter sentences when sad, grounding when fearful, validation when angry)
-- **Conversation memory** — Extracts personal facts (family, pets, career, interests) and uses them to personalize responses
-- **RAG memory system** — SQLite vector store with OpenAI embeddings (hash-based fallback), cross-session memory recall, session summaries
-- **Safety detection** — Crisis keywords, emergency keywords, and sustained distress trigger immediate caregiver alerts
+**Voice & Conversation**
+- OpenAI Whisper (small model) for speech-to-text with voice-activity detection
+- OpenAI TTS (tts-1) for natural speech — configurable voice (nova, alloy, echo, fable, onyx, shimmer)
+- GPT-4o-mini or Ollama (llama3.2) for natural conversation
+- Emotion-adaptive responses — style changes based on detected mood
+- 0.6s post-speech pause prevents mic echo pickup
+- 2.5s silence timeout for natural conversation pacing
 
-#### Proactive Autonomy Engine
-- **Morning routine** — Weather briefing + affirmation + medication reminder (7-9 AM)
-- **Midday check-in** — Activity suggestions, lunch/hydration reminder (12-2 PM)
-- **Evening wind-down** — Bedtime story/music offer, medication check (8-10 PM)
-- **Silence detection** — Gentle check after 10 min idle, conversation starter after 30 min
-- **Hydration reminders** — Hourly water nudges during waking hours
-- **Exercise suggestions** — Every 2 hours during the day
-- **Wellness check-in** — Every 4 hours, structured 6-question assessment
-- **Mood comfort** — Proactive support after 3+ consecutive sad interactions
-- **Idle animations** — Subtle movements so Reachy looks alive
+**Memory & Intelligence (Supabase)**
+- Vector embeddings (pgvector, 1536-dim) — semantic search across all past conversations
+- Emotion-weighted memory — sad/fearful moments rank higher in recall
+- Knowledge graph — GPT extracts entities (people, places, things) and relationships
+- Temporal pattern detection — mood trends, topic changes, health mention spikes, engagement drops
+- Smart mention extraction — 100+ regex patterns + GPT-4o-mini fallback for entity capture
+- Session summaries — GPT writes narrative notes at session end, stored as high-weight vectors
+- Patient profile — name, favorite topics, personality notes, updated over time
+- Conversation streaks — tracks consecutive days of interaction
 
-#### Activities & Entertainment
-- **Cognitive games** — Trivia, word association, categories, memory game, story builder
-- **Guided exercises** — 7 seated exercises + 4 pre-built routines (morning, afternoon, evening, gentle)
-- **Guided meditation** — Breathing, body scan, peaceful place, loving kindness
-- **Reminiscence therapy** — Guided memory sharing across 8 themes
-- **Story reader** — 5 stories read page-by-page
-- **Joke teller** — 25 clean jokes with no-repeat tracking
-- **Voice journaling** — Dictate diary entries, save/cancel
-- **Companion chat** — 10 conversation topic categories with starters
-- **News briefing** — Headlines reader
-- **Affirmations** — Daily positive messages, motivational quotes, gratitude prompts
+**Proactive Autonomy Engine**
+- Morning routine (7-9 AM): weather + affirmation + medication reminder
+- Midday check-in (12-2 PM): activity suggestions, lunch/hydration
+- Evening wind-down (8-10 PM): bedtime story/music, medication check
+- Silence detection: gentle check after 10 min, conversation starter after 30 min
+- Hourly hydration reminders, exercise suggestions every 2 hours
+- Mood comfort after 3+ consecutive sad interactions
+- Idle animations so Reachy looks alive
 
-#### Music
-- **Song library** — SQLite database, auto-scans `songs/` folder for MP3/WAV/M4A/OGG/FLAC
-- **Natural language requests** — "Play Frank Sinatra", "play something calm", "play happy music"
-- **Search** — By title, artist, genre, or mood
-- **Playlists** — Create and manage playlists
-- **12 generated melodies** — Calm, happy, lullaby, morning, celebration, thinking, gentle, waltz, nostalgic, playful, rain, sunset
-- **21 sound effects** — Chimes, alerts, game sounds, breathing cues
-- **Mood-based fallback** — Falls back to matching generated melody when no songs found
+**Activities & Entertainment**
+- Cognitive games: trivia, word association, categories, memory, story builder
+- Guided exercises: 7 seated exercises + 4 routines (morning, afternoon, evening, gentle)
+- Guided meditation: breathing, body scan, peaceful place, loving kindness
+- Reminiscence therapy: guided memory sharing across 8 themes
+- Story reader, joke teller, voice journaling, news briefing, weather
+- Music: song library with natural language search, 12 melodies, 21 sound effects
 
-#### Health & Safety
-- **Medication management** — Reminders, confirmation tracking, caregiver alerts
-- **Daily check-in** — Sleep, pain, mood, eating, social, movement assessment
-- **Fall detection** — MediaPipe pose estimation (sudden hip drops, lying posture, head-below-hips)
-- **Vitals monitoring** — Heart rate, SpO2, blood pressure, temperature (BLE devices or simulated)
-- **Patient model** — Tracks cognitive decline, exercise compliance, medication adherence over time
-- **Sleep tracking** — Bedtime/wake time logging with quality tips
-- **Hydration tracking** — Water intake reminders and logging
-- **Emergency alerts** — Crisis, emergency, medication, food, and help requests sent to caregiver
+**Health & Safety**
+- Fall detection via MediaPipe pose estimation
+- Vitals monitoring (heart rate, SpO2, BP, temperature)
+- Medication reminders with confirmation tracking
+- Daily wellness check-in (6-question assessment)
+- Crisis/emergency keyword detection → instant caregiver alerts
+- Sleep tracking (bedtime/wake logging)
 
-#### Smart Home
-- **Home Assistant integration** — REST API control (or simulated mode)
-- **Devices** — Lights (on/off/dim), thermostat, TV, blinds/curtains, fan
-- **Scene presets** — Bedtime, morning, movie, relax, bright
-- **Natural language** — "Turn on the lights", "set temperature to 72", "bedtime mode"
+**Smart Home**
+- Home Assistant integration (or simulated mode)
+- Lights, thermostat, TV, blinds, fan control
+- Scene presets: bedtime, morning, movie, relax, bright
 
-#### Robot Control
-- **22 movement patterns** — Dance, greet, celebrate, breathe, stretch, bow, wiggle, rock, and more
-- **Facial expressions** — Joy, sadness, anger, fear, surprise, neutral
-- **Camera streaming** — MJPEG server on port 5556
-- **Patient profiles** — Elderly vs disabled with different TTS rates, care responses, and autonomy configs
+### Caregiver Dashboard
 
-### Caregiver Dashboard (caregiver-dashboard)
+**Real-time**
+- SSE-powered live alerts with audio notifications
+- Live conversation feed (patient ↔ Reachy ↔ caregiver)
+- Send messages through Reachy (polled every 3 seconds)
+- Emergency SOS button
+- Live camera feed from Reachy
 
-#### Core
-- **Real-time alerts** via Server-Sent Events (SSE) with audio notifications
-- **Live conversation** feed (patient ↔ Reachy ↔ caregiver)
-- **Send messages** through Reachy to the patient
-- **Quick action buttons** — Medication coming, food coming, comfort, etc.
-- **Emergency SOS button**
-- **Live camera feed** from Reachy
+**Patient Care**
+- Patient management with conditions and emergency contacts
+- Medication scheduling with adherence tracking
+- Mood charts, vitals dashboard, check-in history
+- Activity log with date grouping and filters
 
-#### Patient Care
-- **Patient management** — Add/track multiple patients with conditions and emergency contacts
-- **Medication tracking** — Dosages, schedules, adherence logging, today's med log
-- **Mood charts** — Bar chart + summary with emoji indicators
-- **Vitals dashboard** — Heart rate + SpO2 line chart, latest readings
-- **Medication adherence** — Donut chart showing taken vs missed
-- **Check-in history** — Timestamped wellness assessment results
-- **Mood timeline** — Chronological mood entries
+**Caregiver Tools**
+- Shift handoff reports
+- Caregiver notes per patient
+- Auto-generated daily reports
+- CSV/text export
+- Scheduled messages with timeline view
 
-#### Caregiver Tools
-- **Shift handoff** — Auto-generated reports from today's alerts, moods, meds, notes
-- **Caregiver notes** — Add/delete observations per patient
-- **Daily reports** — Auto-generated care summaries
-- **Activity log** — Timestamped event tracking
-- **CSV export** — Activity log and alerts exportable
-- **Text export** — Daily reports downloadable
+**Family Portal**
+- Send messages that Reachy reads aloud
+- See current mood, last active time, vitals
+- Quick message buttons ("I love you", "See you soon")
+- Character counter on messages
 
-#### Family Portal
-- **Send messages** — Family members can send messages that Reachy reads aloud
-- **Patient summary** — Current mood, last active time, dominant mood
-- **Mood display** — Recent mood entries with emoji
-- **Vitals display** — Latest heart rate, SpO2, blood pressure, temperature
-
-#### Infrastructure
-- **Authentication** — bcrypt password hashing (sha256 fallback), session-based login
-- **User management** — CRUD API for users, password change, role-based access
-- **Multi-language** — i18n translations (English, Spanish, French, German)
-- **PWA** — Installable on mobile, offline caching, push notifications for critical alerts
-- **SQLite** — WAL mode for concurrent access (default)
-- **PostgreSQL/Supabase** — Optional backend via `DATABASE_URL` or `SUPABASE_DB_URL` env var
-- **Docker** — Dockerfile + docker-compose with nginx reverse proxy
-- **Dark themed UI** — Responsive design with 11 pages
-- **Scheduled messages** — Time-based automated messages with repeat options
-- **Facility management** — Multi-site support
-- **Trend APIs** — Mood, activity, and medication trends by day
+**Infrastructure**
+- Authentication with bcrypt, session-based login, remember me
+- Multi-language (English, Spanish, French, German)
+- PWA — installable on mobile with push notifications
+- SQLite (default) or PostgreSQL/Supabase
+- Docker + nginx deployment ready
+- Dark themed responsive UI across 12 pages
 
 ### Testing & CI
-- **149 unit tests** across 10 test files (brain, autonomy, checkin, cognitive, emotion, helpers, memory, profiles, reminders, dashboard API)
-- **GitHub Actions CI** — 3 jobs: test-reachy-assist (pytest + coverage), test-dashboard (API tests), lint (ruff)
-- **All tests pass in < 1 second**
+- 149 unit tests across 10 test files
+- GitHub Actions CI: test + lint (ruff)
+- All tests pass in < 1 second
 
-## Quick Start
+---
 
-### Prerequisites
-- Python 3.12+
-- Reachy Mini robot (or simulation)
-- macOS (for `say` TTS command)
-- OpenAI API key (optional, for LLM brain + embeddings)
+## Architecture
 
-### Robot Setup
-```bash
-cd reachy-assist
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Start Reachy simulation (separate terminal)
-GST_PLUGIN_SCANNER="" mjpython $(which reachy-mini-daemon) --sim --deactivate-audio
-
-# Run the assistant
-python run.py --brain openai --profile elderly
+```
+┌──────────────────────────────────────────────────────────────┐
+│                        Patient                                │
+│                    (speaks to Reachy)                         │
+└──────────────────────┬───────────────────────────────────────┘
+                       │ voice
+                       ▼
+┌──────────────────────────────────────────────────────────────┐
+│                   reachy-assist (Robot)                        │
+│                                                               │
+│  Whisper STT ──→ Emotion Detection ──→ GPT-4o-mini Brain     │
+│       │                                      │                │
+│       │         ┌────────────────────────────┤                │
+│       │         │  Vector Memory (pgvector)   │                │
+│       │         │  Knowledge Graph (GPT)      │                │
+│       │         │  Temporal Patterns           │                │
+│       │         │  Mention Tracking            │                │
+│       │         └────────────────────────────┘                │
+│       │                                      │                │
+│       │                              OpenAI TTS (nova)        │
+│       │                                      │                │
+│       ▼                                      ▼                │
+│   [mic input]                          [speaker output]       │
+│                                                               │
+│   Polls dashboard ←──── REST API ────→ Pushes alerts/convo   │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ HTTP (localhost:5555)
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│              caregiver-dashboard (Flask Web App)               │
+│                                                               │
+│  Real-time alerts (SSE)    │  Send messages to patient        │
+│  Live conversation feed    │  Medication scheduling           │
+│  Patient management        │  Scheduled messages              │
+│  Mood/vitals charts        │  Family portal                   │
+│  Activity log              │  Reports & export                │
+│  Facility management       │  Settings & user management      │
+│                                                               │
+│  SQLite (local) or PostgreSQL/Supabase (cloud)               │
+└──────────────────────────────┬───────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Supabase (Cloud DB)                         │
+│                                                               │
+│  18 tables: conversation log, mood, mentions, topics,         │
+│  facts, profile, cognitive scores, exercises, sleep,          │
+│  session summaries, weekly reports, reminders, alerts,         │
+│  vector memory (1536-dim embeddings), knowledge graph          │
+│  (entities + relations), temporal patterns                     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-### Dashboard Setup
-```bash
-cd caregiver-dashboard
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
-# Open http://localhost:5555 — login: admin / admin
-```
+**Robot → Dashboard:** Alerts, conversation logs, status updates, activity events, vitals
+**Dashboard → Robot:** Messages (polled every 3s), scheduled messages, medication reminders
+**Camera:** Separate MJPEG stream on port 5556
+**Database:** SQLite (default) or PostgreSQL/Supabase (via env var)
 
-### CLI Flags
-```
---text              Text mode (no mic/speaker)
---emotion-backend   keywords | transformers
---brain             openai | ollama | none
---face              Enable webcam emotion detection
---language          en | es | fr | de | it | pt | zh | ja | ko
---profile           elderly | disabled
-```
+---
 
-### Adding Songs
-Drop MP3/WAV/M4A/OGG/FLAC files into `reachy-assist/songs/`. Reachy auto-discovers them on startup.
+## What Each Supabase Table Stores
 
-Name files as `Artist - Title.mp3` for automatic metadata parsing. Organize into subfolders by genre (e.g. `songs/jazz/`, `songs/classical/`).
+| Table | What goes in it | When |
+|---|---|---|
+| `bot_conversation_log` | Every sentence patient and Reachy say | Every interaction |
+| `bot_mood_log` | Detected emotion (joy, sadness, anger, etc.) | Every interaction |
+| `bot_mentions` | People, places, activities, pets, food, health | Pattern matching + GPT |
+| `bot_topics` | Conversation topics | Every interaction |
+| `bot_conversation_dates` | Dates the patient talked to Reachy | Daily |
+| `bot_streaks` | Consecutive days of conversation | Daily |
+| `bot_patient_facts` | Personal facts ("has a daughter named Sarah") | GPT extraction |
+| `bot_patient_profile` | Name, favorite topic, personality notes | Updated over time |
+| `bot_cognitive_scores` | Game scores (trivia, word games) | After each game |
+| `bot_exercise_log` | Exercises completed and duration | After each exercise |
+| `bot_sleep_log` | Bedtime and wake-up events | Goodnight/good morning |
+| `bot_session_summaries` | GPT-written session notes | On session end (Ctrl+C) |
+| `bot_weekly_reports` | Auto-generated weekly care reports | Weekly |
+| `bot_reminders` | Patient reminders | When patient sets one |
+| `bot_caregiver_alerts` | Crisis, emergency, distress alerts | Safety triggers |
+| `bot_memory_vectors` | 1536-dim conversation embeddings | Every interaction |
+| `bot_knowledge_entities` | People, places, things GPT identifies | GPT extraction |
+| `bot_knowledge_relations` | Relationships between entities | GPT extraction |
+| `bot_temporal_patterns` | Mood trends, topic changes, health spikes | Every 10 interactions |
 
-### Supabase/PostgreSQL Setup
-```bash
-# Install the Postgres driver in the dashboard venv
-pip install psycopg2-binary
+---
 
-# Set your connection string
-export SUPABASE_DB_URL="postgresql://postgres:yourpassword@db.xxxxx.supabase.co:5432/postgres"
-# or
-export DATABASE_URL="postgresql://user:pass@host:port/dbname"
+## Environment Variables
 
-# Start the dashboard — it auto-detects Postgres
-python app.py
-```
+### reachy-assist/.env
 
-### Docker Deployment
+| Variable | Required | Description | Default |
+|---|---|---|---|
+| `OPENAI_API_KEY` | Yes | OpenAI API key for brain + voice + embeddings | none |
+| `SUPABASE_DB_URL` | Recommended | Supabase PostgreSQL connection string | none |
+| `REACHY_VOICE` | No | TTS voice: alloy, echo, fable, nova, onyx, shimmer | `nova` |
+| `DASHBOARD_URL` | No | Dashboard URL for robot communication | `http://localhost:5555` |
+| `WEATHER_CITY` | No | City for weather briefings | `auto` |
+| `OPENAI_MODEL` | No | GPT model name | `gpt-4o-mini` |
+| `OLLAMA_MODEL` | No | Ollama model name | `llama3.2` |
+| `HOME_ASSISTANT_URL` | No | Home Assistant URL | none (simulated) |
+| `HOME_ASSISTANT_TOKEN` | No | Home Assistant access token | none |
+
+### caregiver-dashboard/.env
+
+| Variable | Required | Description | Default |
+|---|---|---|---|
+| `SUPABASE_DB_URL` | No | Supabase PostgreSQL connection string | none (uses SQLite) |
+| `DATABASE_URL` | No | Alternative PostgreSQL connection string | none |
+| `SECRET_KEY` | No | Flask session secret | auto-generated |
+
+---
+
+## Running on Separate Machines
+
+If the dashboard runs on a different computer (e.g. a tablet at the nurse's station):
+
+1. Find the dashboard machine's IP: `ifconfig | grep inet`
+2. On the robot machine, set in `.env`: `DASHBOARD_URL=http://192.168.1.XXX:5555`
+3. Both machines must be on the same network
+
+---
+
+## Docker Deployment
+
 ```bash
 docker-compose up -d
 # Dashboard at http://localhost:5555
-# Add nginx profile for reverse proxy: docker-compose --profile production up -d
+
+# With nginx reverse proxy:
+docker-compose --profile production up -d
 ```
 
-### Running Tests
+---
+
+## Running Tests
+
 ```bash
 cd reachy-assist
 source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-## Architecture
+---
 
-```
-┌─────────────────────┐     REST API      ┌──────────────────────┐
-│   Reachy Mini Robot  │ ───────────────── │  Caregiver Dashboard │
-│                      │                   │                      │
-│  Whisper STT         │  → Alerts         │  Flask + SQLite/PG   │
-│  macOS TTS           │  → Conversation   │  SSE real-time       │
-│  OpenAI/Ollama LLM   │  → Status         │  PWA (installable)   │
-│  Emotion detection   │  → Activity log   │  11 pages            │
-│  RAG memory          │                   │  Auth + i18n         │
-│  Autonomy engine     │  ← Messages       │  Family portal       │
-│  22 movements        │  ← Med schedule   │  Shift handoffs      │
-│  Song library        │  ← Scheduled msgs │  Vitals + charts     │
-│  Smart home          │                   │  CSV/text export     │
-│  Fall detection      │                   │                      │
-│  Vitals monitoring   │  Camera (5556)    │  Live camera feed    │
-└─────────────────────┘ ─────────────────  └──────────────────────┘
-                                                     │
-                                              ┌──────┴──────┐
-                                              │ Family Portal│
-                                              │ (phone/web)  │
-                                              └─────────────┘
-```
+## Troubleshooting
 
-- Robot → Dashboard: Alerts, conversation logs, status updates, activity events, vitals
-- Dashboard → Robot: Messages (polled), scheduled messages, medication reminders
-- Camera: Separate MJPEG stream on port 5556
-- Database: SQLite (default) or PostgreSQL/Supabase (via env var)
+| Problem | Fix |
+|---|---|
+| `No module named 'openai'` | `source .venv/bin/activate && pip install openai` |
+| Mic not working | System Preferences → Security → Microphone → allow Terminal |
+| No audio from Reachy | Check volume. Test: `afplay /System/Library/Sounds/Tink.aiff` |
+| Dashboard "Reconnecting..." | Make sure `python app.py` is running |
+| Robot can't reach dashboard | Both on same machine, or set `DASHBOARD_URL` to correct IP |
+| Supabase connection fails | Check password is URL-encoded, use port 6543 (not 5432) |
+| Whisper slow on first run | Downloads ~500MB model. Subsequent runs are fast. |
 
-## Roadmap
-
-### Integration (built, needs wiring)
-- [ ] Start fall detection monitor in the main interaction loop
-- [ ] Start vitals monitor background thread in the main loop
-- [ ] Log cognitive game scores to patient_model from interaction loop
-- [ ] Log exercise completions to patient_model
-- [ ] Log medication adherence events to patient_model
-- [ ] Inject i18n translations into dashboard templates (currently hardcoded English)
-
-### Features
-- [ ] Multi-patient support — switch between patients, per-patient profiles and data
-- [ ] Voice cloning / custom TTS voices — more natural than macOS `say`
-- [ ] Video call integration — family video chat through Reachy
-- [ ] Medication OCR — photo of pill bottle → auto-add to schedule
-- [ ] Activity recognition from camera — detect eating, sleeping, watching TV
-- [ ] Emergency contact auto-dial — call 911 or family on crisis detection
-- [ ] Photo album viewer — show family photos on a connected screen
-- [ ] Birthday/holiday awareness — special greetings and themed activities
-- [ ] Pet companion mode — virtual pet the patient can "care for"
-- [ ] Card/board games — interactive games with the patient
-- [ ] Spotify/Apple Music integration — stream real music
-
-### Developer & Infrastructure
-- [ ] Tests for smart_home, vitals, patient_model, fall_detection, music song library
-- [ ] API documentation (OpenAPI/Swagger)
-- [ ] Rate limiting on dashboard API
-- [ ] HTTPS setup with Let's Encrypt certificates
-- [ ] CI/CD auto-deploy for dashboard Docker container
-- [ ] Structured logging and error tracking
-- [ ] Dashboard mobile responsiveness polish
-
-## Environment Variables
-
-| Variable | Description | Default |
-|---|---|---|
-| `OPENAI_API_KEY` | OpenAI API key for LLM + embeddings | (none) |
-| `OPENAI_MODEL` | OpenAI model name | `gpt-4o-mini` |
-| `OLLAMA_MODEL` | Ollama model name | `llama3.2` |
-| `DASHBOARD_URL` | Dashboard URL for robot → dashboard comms | `http://localhost:5555` |
-| `WEATHER_CITY` | City for weather briefing | `auto` |
-| `DATABASE_URL` | PostgreSQL connection string | (none, uses SQLite) |
-| `SUPABASE_DB_URL` | Supabase PostgreSQL connection string | (none) |
-| `SECRET_KEY` | Flask session secret key | `reachy-care-secret-key-change-me` |
-| `HOME_ASSISTANT_URL` | Home Assistant base URL | (none, simulated) |
-| `HOME_ASSISTANT_TOKEN` | Home Assistant long-lived access token | (none) |
-| `REACHY_SONGS_DIR` | Path to song library folder | `reachy-assist/songs/` |
+---
 
 ## License
 

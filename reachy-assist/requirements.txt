@@ -16,6 +16,12 @@ websockets
 flask
 flask-cors
 
+# YouTube music streaming
+yt-dlp
+
+# Voice cloning (optional — set ELEVENLABS_API_KEY to activate)
+elevenlabs
+
 # RAG memory
 # OpenAI embeddings preferred; hash-based fallback if no API key
 

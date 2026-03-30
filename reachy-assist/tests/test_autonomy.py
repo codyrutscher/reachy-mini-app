@@ -9,7 +9,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from autonomy import AutonomyEngine, ProactiveAction
+from integration.autonomy import AutonomyEngine, ProactiveAction
 
 
 @pytest.fixture
@@ -38,7 +38,7 @@ class TestCheckinSuggestion:
         from datetime import datetime as dt
 
         # Simulate hour=10 (within 9-20 range)
-        with patch("autonomy.datetime") as mock_dt:
+        with patch("integration.autonomy.datetime") as mock_dt:
             mock_dt.now.return_value = dt(2026, 3, 14, 10, 0, 0)
             mock_dt.side_effect = lambda *a, **kw: dt(*a, **kw)
             engine._check_checkin_suggestion(time.time(), 10)
@@ -119,7 +119,7 @@ class TestHydrationReminder:
         from unittest.mock import patch
         from datetime import datetime as dt
 
-        with patch("autonomy.datetime") as mock_dt:
+        with patch("integration.autonomy.datetime") as mock_dt:
             mock_dt.now.return_value = dt(2026, 3, 14, 14, 0, 0)
             engine._check_hydration(time.time())
 
@@ -135,7 +135,7 @@ class TestHydrationReminder:
         from unittest.mock import patch
         from datetime import datetime as dt
 
-        with patch("autonomy.datetime") as mock_dt:
+        with patch("integration.autonomy.datetime") as mock_dt:
             mock_dt.now.return_value = dt(2026, 3, 14, 2, 0, 0)
             engine._check_hydration(time.time())
 

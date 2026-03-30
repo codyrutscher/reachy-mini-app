@@ -18,6 +18,7 @@ load_dotenv(Path(__file__).parent / ".env")
 
 from flask import Flask, request, jsonify, render_template, Response, session, redirect, url_for
 from flask_cors import CORS
+from log_config import get_logger
 from validators import (
     sanitize, sanitize_short, require_json, require_fields,
     validate_time_format, validate_role, validate_username, validate_repeat,
@@ -27,20 +28,57 @@ from validators import (
 )
 import db
 
+logger = get_logger("app")
+
 # Auto-detect PostgreSQL/Supabase — use Postgres backend if configured
 _pg_url = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL", "")
 if _pg_url:
     try:
         import db_postgres
         db = db_postgres
-        print("[APP] Using PostgreSQL/Supabase database backend")
+        logger.info("Using PostgreSQL/Supabase database backend")
     except ImportError:
-        print("[APP] psycopg2 not installed — falling back to SQLite")
-        print("[APP] Install with: pip install psycopg2-binary")
+        logger.warning("psycopg2 not installed — falling back to SQLite")
+        logger.info("Install with: pip install psycopg2-binary")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "reachy-care-secret-key-change-me")
 CORS(app)
+
+# ── Request logging middleware ──────────────────────────────────────
+
+import time as _time
+import uuid as _uuid
+
+_req_logger = get_logger("request")
+
+@app.before_request
+def _log_request_start():
+    request._start_time = _time.time()
+    request._request_id = _uuid.uuid4().hex[:8]
+
+@app.after_request
+def _log_request_end(response):
+    # Skip noisy endpoints (SSE stream, static files)
+    if request.path in ("/stream",) or request.path.startswith("/static"):
+        return response
+    duration_ms = round((_time.time() - getattr(request, "_start_time", _time.time())) * 1000, 1)
+    user = session.get("user", {}).get("username", "-") if session else "-"
+    _req_logger.info(
+        "%s %s %s %sms",
+        request.method, request.path, response.status_code, duration_ms,
+        extra={
+            "request_id": getattr(request, "_request_id", ""),
+            "method": request.method,
+            "path": request.path,
+            "status": response.status_code,
+            "duration_ms": duration_ms,
+            "ip": request.remote_addr,
+            "user": user,
+        },
+    )
+    response.headers["X-Request-Id"] = getattr(request, "_request_id", "")
+    return response
 
 # ── Global error handlers ───────────────────────────────────────────
 
@@ -74,10 +112,10 @@ def inject_i18n():
 try:
     import bcrypt
     _USE_BCRYPT = True
-    print("[AUTH] Using bcrypt for password hashing")
+    logger.info("Using bcrypt for password hashing")
 except ImportError:
     _USE_BCRYPT = False
-    print("[AUTH] bcrypt not installed, using sha256 (install bcrypt for production)")
+    logger.warning("bcrypt not installed, using sha256 (install bcrypt for production)")
 
 
 def _hash_password(password):
@@ -122,7 +160,7 @@ _seed_users = [
 for _u, _p, _r, _n in _seed_users:
     if not db.get_user(_u):
         db.add_user(_u, _hash_password(_p), role=_r, name=_n)
-        print(f"[AUTH] Created user: {_u} / {_p} (role: {_r})")
+        logger.info("Created user: %s (role: %s)", _u, _r)
 
 sse_listeners = []
 
@@ -198,8 +236,68 @@ def login_action():
     if user and _check_password(password, user["password_hash"]):
         session["user"] = {"username": username, "role": user["role"], "name": user["name"]}
         db.add_activity("login", f"{username} logged in")
-        return jsonify({"status": "ok"})
+        # Family users go straight to the family portal
+        redirect_to = "/family" if user["role"] == "family" else "/"
+        return jsonify({"status": "ok", "redirect": redirect_to})
     return jsonify({"error": "Invalid credentials"}), 401
+
+
+@app.route("/api/shift-briefing", methods=["GET"])
+@login_required
+def shift_briefing():
+    """Auto-generate a shift briefing for the current caregiver."""
+    patient_id = request.args.get("patient_id", "default")
+    briefing = {"generated": datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+    try:
+        briefing["status"] = db.get_status()
+    except Exception:
+        briefing["status"] = {}
+
+    try:
+        moods = db.get_mood_history(limit=20)
+        if moods:
+            mood_counts = {}
+            for m in moods:
+                mood_counts[m["mood"]] = mood_counts.get(m["mood"], 0) + 1
+            briefing["mood_summary"] = mood_counts
+            briefing["dominant_mood"] = max(mood_counts, key=mood_counts.get)
+        else:
+            briefing["mood_summary"] = {}
+    except Exception:
+        briefing["mood_summary"] = {}
+
+    try:
+        briefing["recent_alerts"] = db.get_alerts(limit=5)
+    except Exception:
+        briefing["recent_alerts"] = []
+
+    try:
+        briefing["med_log"] = db.get_med_log_today()
+    except Exception:
+        briefing["med_log"] = []
+
+    try:
+        sessions = db.get_bot_session_summaries(patient_id=patient_id, limit=3)
+        briefing["sessions"] = sessions
+        if sessions:
+            summaries = [s.get("summary_text", "") for s in sessions if s.get("summary_text")]
+            briefing["session_summary"] = " ".join(summaries[:2])
+    except Exception:
+        briefing["sessions"] = []
+
+    try:
+        briefing["unread_family"] = len([m for m in db.get_family_messages(limit=20) if not m.get("read")])
+    except Exception:
+        briefing["unread_family"] = 0
+
+    try:
+        notes = db.get_notes(limit=3)
+        briefing["recent_notes"] = notes
+    except Exception:
+        briefing["recent_notes"] = []
+
+    return jsonify(briefing)
 
 
 @app.route("/logout")
@@ -224,6 +322,11 @@ def patients_page():
 @login_required
 def history_page():
     return render_template("history.html", active_page="history")
+
+@app.route("/analytics")
+@login_required
+def analytics_page():
+    return render_template("analytics.html", active_page="analytics")
 
 @app.route("/facilities")
 @login_required
@@ -691,6 +794,133 @@ def mark_family_read(mid):
     db.mark_family_message_read(mid)
     return jsonify({"status": "ok"})
 
+
+@app.route("/api/family/voice-message", methods=["POST"])
+@login_required
+def post_family_voice_message():
+    """Upload a voice message from family. Accepts audio as base64 in JSON."""
+    data, err = require_json()
+    if err:
+        return err
+    audio_b64 = data.get("audio", "")
+    family_member = sanitize_short(data.get("family_member", "Family"))
+    if not audio_b64:
+        return jsonify({"error": "Audio data is required"}), 400
+
+    import base64, uuid
+    try:
+        audio_bytes = base64.b64decode(audio_b64)
+    except Exception:
+        return jsonify({"error": "Invalid audio data"}), 400
+
+    filename = f"voice_{uuid.uuid4().hex[:8]}.webm"
+    voice_dir = os.path.join(os.path.dirname(__file__), "static", "voice_messages")
+    os.makedirs(voice_dir, exist_ok=True)
+    with open(os.path.join(voice_dir, filename), "wb") as f:
+        f.write(audio_bytes)
+
+    audio_url = f"/static/voice_messages/{filename}"
+    msg = db.add_family_message(
+        family_member=family_member,
+        message=f"🎤 Voice message from {family_member}",
+        patient_id=data.get("patient_id", 0),
+        message_type="voice",
+    )
+    db.add_message(text=f"Voice message from {family_member}|audio:{audio_url}", priority="normal")
+    db.add_activity("voice_message", f"Voice message from {family_member}")
+    notify_listeners("family_message", {**msg, "audio_url": audio_url})
+    return jsonify({"ok": True, "audio_url": audio_url}), 201
+
+
+@app.route("/api/family/photo", methods=["POST"])
+@login_required
+def post_family_photo():
+    """Upload a photo from family. Reachy will describe it to the patient."""
+    data, err = require_json()
+    if err:
+        return err
+    image_b64 = data.get("image", "")
+    family_member = sanitize_short(data.get("family_member", "Family"))
+    caption = sanitize(data.get("caption", ""))
+    if not image_b64:
+        return jsonify({"error": "Image data is required"}), 400
+
+    import base64, uuid
+    try:
+        img_bytes = base64.b64decode(image_b64)
+    except Exception:
+        return jsonify({"error": "Invalid image data"}), 400
+
+    filename = f"photo_{uuid.uuid4().hex[:8]}.jpg"
+    photo_dir = os.path.join(os.path.dirname(__file__), "static", "family_photos")
+    os.makedirs(photo_dir, exist_ok=True)
+    with open(os.path.join(photo_dir, filename), "wb") as f:
+        f.write(img_bytes)
+
+    photo_url = f"/static/family_photos/{filename}"
+    msg = db.add_family_message(
+        family_member=family_member,
+        message=f"📷 Photo from {family_member}" + (f": {caption}" if caption else ""),
+        patient_id=data.get("patient_id", 0),
+        message_type="photo",
+    )
+    # Queue for Reachy to describe
+    db.add_message(
+        text=f"Photo from {family_member}|photo:{photo_url}" + (f"|caption:{caption}" if caption else ""),
+        priority="normal",
+    )
+    db.add_activity("family_photo", f"Photo from {family_member}")
+    notify_listeners("family_message", {**msg, "photo_url": photo_url})
+    return jsonify({"ok": True, "photo_url": photo_url}), 201
+
+
+@app.route("/api/family/questions", methods=["POST"])
+@login_required
+def post_family_question():
+    """Family submits a question for Reachy to work into conversation."""
+    data, err = require_json()
+    if err:
+        return err
+    question = sanitize(data.get("question", ""))
+    family_member = sanitize_short(data.get("family_member", "Family"))
+    if not question:
+        return jsonify({"error": "Question is required"}), 400
+
+    msg = db.add_family_message(
+        family_member=family_member,
+        message=f"❓ Question: {question}",
+        patient_id=data.get("patient_id", 0),
+        message_type="question",
+    )
+    # Queue as a special message for Reachy
+    db.add_message(
+        text=f"Family question from {family_member}|question:{question}",
+        priority="normal",
+    )
+    db.add_activity("family_question", f"{family_member} asked: {question[:50]}")
+    return jsonify({"ok": True}), 201
+
+
+@app.route("/api/family/questions", methods=["GET"])
+@login_required
+def get_family_questions():
+    """Get pending family questions."""
+    msgs = db.get_family_messages(limit=50)
+    questions = [m for m in msgs if m.get("message_type") == "question"]
+    return jsonify(questions)
+
+
+@app.route("/api/family/photos", methods=["GET"])
+@login_required
+def get_family_photos():
+    """List uploaded family photos."""
+    photo_dir = os.path.join(os.path.dirname(__file__), "static", "family_photos")
+    if not os.path.exists(photo_dir):
+        return jsonify([])
+    import glob
+    photos = sorted(glob.glob(os.path.join(photo_dir, "*.jpg")), reverse=True)[:50]
+    return jsonify([f"/static/family_photos/{os.path.basename(p)}" for p in photos])
+
 # ── Vitals API ─────────────────────────────────────────────────────
 
 @app.route("/api/vitals", methods=["GET"])
@@ -939,6 +1169,63 @@ def export_report():
 
 # ── SSE ─────────────────────────────────────────────────────────────
 
+# ── Health / Observability ──────────────────────────────────────────
+
+_dashboard_start_time = _time.time()
+
+@app.route("/api/health", methods=["GET"])
+def health_check():
+    """System health endpoint — uptime, memory, connections, version."""
+    import platform
+    uptime_s = round(_time.time() - _dashboard_start_time)
+    hours, remainder = divmod(uptime_s, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    # Memory usage (RSS in MB)
+    try:
+        import resource
+        mem_mb = round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / (1024 * 1024), 1)
+    except Exception:
+        mem_mb = None
+    # Check robot API
+    robot_ok = False
+    try:
+        import urllib.request
+        robot_url = os.environ.get("ROBOT_API_URL", "http://localhost:5557")
+        r = urllib.request.urlopen(f"{robot_url}/api/health", timeout=2)
+        robot_ok = r.status == 200
+    except Exception:
+        pass
+    # Check DB
+    db_ok = False
+    try:
+        db.get_status()
+        db_ok = True
+    except Exception:
+        pass
+    return jsonify({
+        "status": "ok",
+        "uptime": f"{hours}h {minutes}m {seconds}s",
+        "uptime_seconds": uptime_s,
+        "memory_mb": mem_mb,
+        "database": "connected" if db_ok else "error",
+        "robot_api": "connected" if robot_ok else "unreachable",
+        "sse_listeners": len(sse_listeners),
+        "python": platform.python_version(),
+        "platform": platform.system(),
+    })
+
+@app.route("/api/logs", methods=["GET"])
+@login_required
+def get_logs():
+    """Return recent log entries from the in-memory buffer.
+    Query params: limit (default 100), level (DEBUG/INFO/WARNING/ERROR), module (filter string)."""
+    from log_config import get_recent_logs
+    limit = request.args.get("limit", 100, type=int)
+    level = request.args.get("level", "")
+    module = request.args.get("module", "")
+    logs = get_recent_logs(limit=limit, level=level or None, module=module or None)
+    return jsonify(logs)
+
 @app.route("/api/i18n", methods=["GET"])
 def get_translations():
     from i18n import get_all_translations, available_languages
@@ -988,11 +1275,59 @@ def camera_stream_proxy():
 def teleop_page():
     return render_template("teleop.html", active_page="teleop")
 
+@app.route("/logs")
+@login_required
+def logs_page():
+    return render_template("logs.html", active_page="logs")
+
 
 @app.route("/mirror")
 @login_required
 def mirror_page():
     return render_template("mirror.html", active_page="mirror")
+
+
+@app.route("/radio")
+@login_required
+def radio_page():
+    return render_template("radio.html", active_page="radio")
+
+
+@app.route("/code-pad")
+@login_required
+def code_pad_page():
+    return render_template("code_pad.html", active_page="code_pad")
+
+
+# ── Code Pad state (receives pushes from bot) ────────────────────────
+_code_pad_current = {"code": "", "language": "python", "prompt": "", "timestamp": ""}
+_code_pad_history = []
+
+@app.route("/api/code-pad", methods=["POST"])
+def code_pad_push():
+    """Receive code pushed from the bot's coding assistant."""
+    data = request.get_json(silent=True) or {}
+    global _code_pad_current
+    _code_pad_current = {
+        "code": data.get("code", ""),
+        "language": data.get("language", "python"),
+        "prompt": data.get("prompt", ""),
+        "timestamp": data.get("timestamp", ""),
+    }
+    _code_pad_history.insert(0, dict(_code_pad_current))
+    if len(_code_pad_history) > 50:
+        _code_pad_history.pop()
+    return jsonify({"ok": True})
+
+@app.route("/api/code-pad/current")
+@login_required
+def code_pad_current():
+    return jsonify(_code_pad_current)
+
+@app.route("/api/code-pad/history")
+@login_required
+def code_pad_history():
+    return jsonify(_code_pad_history[:20])
 
 
 # ── Robot Teleoperation Proxy ────────────────────────────────────────
@@ -1059,6 +1394,182 @@ def robot_reset():
     return _robot_proxy("/api/reset")
 
 
+# ── Radio DJ Proxy ───────────────────────────────────────────────────
+
+@app.route("/api/radio/status", methods=["GET"])
+@login_required
+def radio_status():
+    return _robot_proxy("/api/radio/status", method="GET")
+
+@app.route("/api/radio/start", methods=["POST"])
+@login_required
+def radio_start():
+    return _robot_proxy("/api/radio/start")
+
+@app.route("/api/radio/stop", methods=["POST"])
+@login_required
+def radio_stop():
+    return _robot_proxy("/api/radio/stop")
+
+@app.route("/api/radio/skip", methods=["POST"])
+@login_required
+def radio_skip():
+    return _robot_proxy("/api/radio/skip")
+
+@app.route("/api/radio/request", methods=["POST"])
+@login_required
+def radio_request_proxy():
+    data, err = require_json()
+    if err:
+        return err
+    return _robot_proxy("/api/radio/request", json_data=data)
+
+@app.route("/api/radio/mood", methods=["POST"])
+@login_required
+def radio_mood():
+    data, err = require_json()
+    if err:
+        return err
+    return _robot_proxy("/api/radio/mood", json_data=data)
+
+
+# ── Voice Clone Proxy ────────────────────────────────────────────────
+
+@app.route("/api/voice/status", methods=["GET"])
+@login_required
+def voice_status():
+    return _robot_proxy("/api/voice/status", method="GET")
+
+@app.route("/api/voice/profiles", methods=["GET"])
+@login_required
+def voice_profiles():
+    return _robot_proxy("/api/voice/profiles", method="GET")
+
+@app.route("/api/voice/create", methods=["POST"])
+@login_required
+def voice_create():
+    """Forward voice creation with file upload to robot API."""
+    robot_url = os.environ.get("ROBOT_API_URL", "http://localhost:5557")
+    import urllib.request
+    from io import BytesIO
+    name = request.form.get("name", "")
+    description = request.form.get("description", "")
+    sample = request.files.get("sample")
+    if not name or not sample:
+        return jsonify({"error": "name and sample file required"}), 400
+    # Build multipart form data
+    boundary = "----ReachyVoiceUpload"
+    body = BytesIO()
+    # name field
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(f'Content-Disposition: form-data; name="name"\r\n\r\n{name}\r\n'.encode())
+    # description field
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(f'Content-Disposition: form-data; name="description"\r\n\r\n{description}\r\n'.encode())
+    # sample file
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(f'Content-Disposition: form-data; name="sample"; filename="{sample.filename}"\r\n'.encode())
+    body.write(f"Content-Type: application/octet-stream\r\n\r\n".encode())
+    body.write(sample.read())
+    body.write(f"\r\n--{boundary}--\r\n".encode())
+    data = body.getvalue()
+    try:
+        req = urllib.request.Request(
+            f"{robot_url}/api/voice/create",
+            data=data,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        resp = urllib.request.urlopen(req, timeout=30)
+        return jsonify(json.loads(resp.read())), resp.status
+    except Exception as e:
+        return jsonify({"error": f"Robot unreachable: {e}"}), 503
+
+@app.route("/api/voice/delete", methods=["POST"])
+@login_required
+def voice_delete():
+    data, err = require_json()
+    if err:
+        return err
+    return _robot_proxy("/api/voice/delete", json_data=data)
+
+@app.route("/api/voice/activate", methods=["POST"])
+@login_required
+def voice_activate():
+    data, err = require_json()
+    if err:
+        return err
+    return _robot_proxy("/api/voice/activate", json_data=data)
+
+@app.route("/api/voice/preview", methods=["POST"])
+@login_required
+def voice_preview():
+    """Forward preview request and stream audio back."""
+    robot_url = os.environ.get("ROBOT_API_URL", "http://localhost:5557")
+    import urllib.request
+    data = request.get_json(silent=True) or {}
+    try:
+        body = json.dumps(data).encode()
+        req = urllib.request.Request(
+            f"{robot_url}/api/voice/preview",
+            data=body,
+            headers={"Content-Type": "application/json"},
+        )
+        resp = urllib.request.urlopen(req, timeout=15)
+        audio = resp.read()
+        return Response(audio, mimetype="audio/mpeg")
+    except Exception as e:
+        return jsonify({"error": f"Preview failed: {e}"}), 503
+
+
+# ── Personality proxy endpoints ───────────────────────────────────
+
+@app.route("/api/robot/personalities")
+@login_required
+def robot_personalities():
+    return _robot_proxy("personalities", method="GET")
+
+@app.route("/api/robot/personalities/activate", methods=["POST"])
+@login_required
+def robot_personality_activate():
+    return _robot_proxy("personalities/activate", json_data=request.get_json(silent=True))
+
+
+# ── Freestyle rapper proxy endpoints ─────────────────────────────
+
+@app.route("/api/robot/freestyle/status")
+@login_required
+def robot_freestyle_status():
+    return _robot_proxy("freestyle/status", method="GET")
+
+@app.route("/api/robot/freestyle/perform", methods=["POST"])
+@login_required
+def robot_freestyle_perform():
+    return _robot_proxy("freestyle/perform", json_data=request.get_json(silent=True))
+
+@app.route("/api/robot/freestyle/stop", methods=["POST"])
+@login_required
+def robot_freestyle_stop():
+    return _robot_proxy("freestyle/stop")
+
+
+# ── Coding assistant proxy endpoints ─────────────────────────────
+
+@app.route("/api/robot/code/generate", methods=["POST"])
+@login_required
+def robot_code_generate():
+    return _robot_proxy("code/generate", json_data=request.get_json(silent=True))
+
+@app.route("/api/robot/code/explain", methods=["POST"])
+@login_required
+def robot_code_explain():
+    return _robot_proxy("code/explain", json_data=request.get_json(silent=True))
+
+@app.route("/api/robot/code/history")
+@login_required
+def robot_code_history():
+    return _robot_proxy("code/history", method="GET")
+
+
 @app.route("/api/camera/snapshot")
 def camera_snapshot():
     """Get a single frame from the robot camera."""
@@ -1111,6 +1622,18 @@ def bot_sessions():
     try:
         rows = db.get_bot_session_summaries(patient_id=patient_id, limit=limit)
         return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/intel", methods=["GET"])
+@login_required
+def bot_intel():
+    """Get conversational intelligence data (humor, topic avoidance, names)."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        rows = db.get_bot_conversation_intel(patient_id=patient_id)
+        return jsonify(rows or {})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1381,10 +1904,509 @@ def doctor_report():
     return jsonify(report)
 
 
+# ══════════════════════════════════════════════════════════════════════
+# Life Story
+# ══════════════════════════════════════════════════════════════════════
+
+@app.route("/api/bot/life-story", methods=["GET"])
+@login_required
+def bot_life_story():
+    """Get the compiled life story for a patient."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        story = db.get_bot_life_story(patient_id=patient_id)
+        return jsonify(story or {})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/life-story/compile", methods=["POST"])
+@login_required
+def bot_compile_life_story():
+    """Trigger a life story compilation/update for a patient."""
+    patient_id = request.json.get("patient_id", "default") if request.json else "default"
+    try:
+        story = db.compile_bot_life_story(patient_id=patient_id)
+        if story:
+            return jsonify(story)
+        return jsonify({"error": "No data available or compilation failed"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/daily-journal", methods=["GET"])
+@login_required
+def bot_daily_journal():
+    """Get recent daily journal entries for a patient."""
+    patient_id = request.args.get("patient_id", "default")
+    limit = request.args.get("limit", 30, type=int)
+    try:
+        entries = db.get_bot_daily_journal(patient_id=patient_id, limit=limit)
+        return jsonify(entries)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/daily-journal/generate", methods=["POST"])
+@login_required
+def bot_generate_journal():
+    """Trigger journal entry generation for today (or a specific date)."""
+    data = request.json or {}
+    patient_id = data.get("patient_id", "default")
+    for_date = data.get("date", "")
+    try:
+        entry = db.generate_bot_journal_entry(patient_id=patient_id, for_date=for_date)
+        if entry:
+            return jsonify(entry)
+        return jsonify({"error": "No conversation data available for journal"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/relationship-map", methods=["GET"])
+@login_required
+def bot_relationship_map():
+    """Get a graph of entities and relationships for visualization.
+
+    Returns {nodes: [{id, label, type, attributes}], edges: [{source, target, relation}]}
+    """
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        graph = db.get_bot_relationship_map(patient_id=patient_id)
+        return jsonify(graph)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/conversation-replay", methods=["GET"])
+@login_required
+def bot_conversation_replay():
+    """Get timestamped conversation turns for replay.
+
+    Query params: patient_id, date (YYYY-MM-DD), limit
+    Returns list of {speaker, text, emotion, topic, time}
+    """
+    patient_id = request.args.get("patient_id", "default")
+    date_str = request.args.get("date", "")
+    limit = request.args.get("limit", 200, type=int)
+    try:
+        turns = db.get_bot_conversation_replay(patient_id=patient_id, date_str=date_str, limit=limit)
+        return jsonify(turns)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/session-dates", methods=["GET"])
+@login_required
+def bot_session_dates():
+    """Get list of dates that have conversation data for the session picker."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        dates = db.get_bot_session_dates(patient_id=patient_id)
+        return jsonify(dates)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/wishes", methods=["GET"])
+@login_required
+def bot_wishes():
+    """Get patient's wish list for family to see."""
+    patient_id = request.args.get("patient_id", "default")
+    limit = request.args.get("limit", 30, type=int)
+    try:
+        wishes = db.get_bot_wishes(patient_id=patient_id, limit=limit)
+        return jsonify(wishes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/wishes/<int:wish_id>/fulfill", methods=["POST"])
+@login_required
+def bot_fulfill_wish(wish_id):
+    """Mark a wish as fulfilled."""
+    try:
+        db.fulfill_bot_wish(wish_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/advice-book", methods=["GET"])
+@login_required
+def bot_advice_book():
+    """Get collected wisdom and advice from the patient."""
+    patient_id = request.args.get("patient_id", "default")
+    limit = request.args.get("limit", 50, type=int)
+    try:
+        entries = db.get_bot_advice_book(patient_id=patient_id, limit=limit)
+        return jsonify(entries)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/recipes", methods=["GET"])
+@login_required
+def bot_recipes():
+    """Get collected recipes from the patient."""
+    patient_id = request.args.get("patient_id", "default")
+    limit = request.args.get("limit", 20, type=int)
+    try:
+        recipes = db.get_bot_recipes(patient_id=patient_id, limit=limit)
+        return jsonify(recipes)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/family/highlights", methods=["GET"])
+@login_required
+def family_highlights():
+    """Get a summary of highlights for the family portal.
+
+    Returns mood, recent activities, journal entries, wishes, and advice.
+    """
+    patient_id = request.args.get("patient_id", "default")
+    highlights = {}
+
+    # Current status
+    try:
+        highlights["status"] = db.get_status()
+    except Exception:
+        highlights["status"] = {}
+
+    # Recent moods
+    try:
+        moods = db.get_mood_history(limit=10)
+        highlights["recent_moods"] = moods
+    except Exception:
+        highlights["recent_moods"] = []
+
+    # Daily journal entries
+    try:
+        highlights["journal"] = db.get_bot_daily_journal(patient_id=patient_id, limit=7)
+    except Exception:
+        highlights["journal"] = []
+
+    # Wishes
+    try:
+        highlights["wishes"] = db.get_bot_wishes(patient_id=patient_id, limit=10)
+    except Exception:
+        highlights["wishes"] = []
+
+    # Advice / wisdom
+    try:
+        highlights["advice"] = db.get_bot_advice_book(patient_id=patient_id, limit=5)
+    except Exception:
+        highlights["advice"] = []
+
+    # Conversation streak
+    try:
+        highlights["streak"] = db.get_bot_streaks(patient_id=patient_id)
+    except Exception:
+        highlights["streak"] = 0
+
+    # Session summaries (last 3 days)
+    try:
+        highlights["sessions"] = db.get_bot_session_summaries(patient_id=patient_id, limit=3)
+    except Exception:
+        highlights["sessions"] = []
+
+    # Family messages
+    try:
+        highlights["messages"] = db.get_family_messages(limit=10)
+    except Exception:
+        highlights["messages"] = []
+
+    return jsonify(highlights)
+
+
+@app.route("/api/family/daily-highlights", methods=["GET"])
+@login_required
+def family_daily_highlights():
+    """Get a 3-sentence highlight reel of the patient's day for family."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        # Try daily journal first
+        journal = db.get_bot_daily_journal(patient_id=patient_id, limit=1)
+        if journal:
+            entry = journal[0]
+            return jsonify({
+                "date": entry.get("date", ""),
+                "summary": entry.get("entry", ""),
+                "mood": entry.get("mood", "neutral"),
+                "interactions": entry.get("interactions", 0),
+                "duration": entry.get("duration_minutes", 0),
+            })
+
+        # Fallback: build from session summaries
+        sessions = db.get_bot_session_summaries(patient_id=patient_id, limit=3)
+        if sessions:
+            total_interactions = sum(s.get("interactions", 0) for s in sessions)
+            moods = [s.get("dominant_mood", "neutral") for s in sessions]
+            dominant = max(set(moods), key=moods.count) if moods else "neutral"
+            summaries = [s.get("summary_text", "") for s in sessions if s.get("summary_text")]
+            summary = " ".join(summaries[:2]) if summaries else f"Had {total_interactions} interactions today."
+            return jsonify({
+                "date": str(datetime.now().date()),
+                "summary": summary[:300],
+                "mood": dominant,
+                "interactions": total_interactions,
+            })
+
+        return jsonify({"summary": "No activity recorded today.", "mood": "neutral"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/care-plans/active", methods=["GET"])
+@login_required
+def get_active_care_plans():
+    """Get active care plans with their goals for a patient."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        plans = db.get_active_care_plans(patient_id=patient_id)
+        return jsonify(plans)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/live")
+@login_required
+def live_view_page():
+    return render_template("live.html", active_page="live")
+
+
+@app.route("/api/conversation/search", methods=["GET"])
+@login_required
+def search_conversations():
+    """Full-text search across past conversations."""
+    q = request.args.get("q", "").strip()
+    patient_id = request.args.get("patient_id", "default")
+    limit = request.args.get("limit", 50, type=int)
+    if not q or len(q) < 2:
+        return jsonify({"error": "Query must be at least 2 characters"}), 400
+    try:
+        results = db.search_bot_conversations(query=q, patient_id=patient_id, limit=limit)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/mood-calendar", methods=["GET"])
+@login_required
+def bot_mood_calendar():
+    """Get dominant mood per day for calendar visualization."""
+    patient_id = request.args.get("patient_id", "default")
+    days = request.args.get("days", 90, type=int)
+    try:
+        calendar = db.get_bot_mood_calendar(patient_id=patient_id, days=days)
+        return jsonify(calendar)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/topic-cloud", methods=["GET"])
+@login_required
+def bot_topic_cloud():
+    """Get topic frequency data for word cloud visualization."""
+    patient_id = request.args.get("patient_id", "default")
+    days = request.args.get("days", 30, type=int)
+    try:
+        topics = db.get_bot_topic_cloud(patient_id=patient_id, days=days)
+        return jsonify(topics)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/session-compare", methods=["GET"])
+@login_required
+def bot_session_compare():
+    """Compare two sessions side by side."""
+    patient_id = request.args.get("patient_id", "default")
+    date1 = request.args.get("date1", "")
+    date2 = request.args.get("date2", "")
+    if not date1 or not date2:
+        return jsonify({"error": "Both date1 and date2 are required"}), 400
+    try:
+        s1 = db.get_bot_session_by_date(patient_id=patient_id, date_str=date1)
+        s2 = db.get_bot_session_by_date(patient_id=patient_id, date_str=date2)
+        return jsonify({"session1": s1, "session2": s2})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/life-story/export", methods=["GET"])
+@login_required
+def export_life_story():
+    """Export the life story as a downloadable text document."""
+    patient_id = request.args.get("patient_id", "default")
+    try:
+        story = db.get_bot_life_story(patient_id=patient_id)
+        if not story:
+            return jsonify({"error": "No life story compiled yet"}), 404
+
+        name = story.get("name", "Patient")
+        chapters = story.get("chapters", {})
+
+        lines = [f"The Life Story of {name}", "=" * 40, ""]
+        chapter_titles = {
+            "childhood": "Childhood",
+            "family": "Family",
+            "career": "Career",
+            "hobbies": "Hobbies & Interests",
+            "places": "Places",
+            "milestones": "Life Milestones",
+            "wisdom": "Wisdom & Advice",
+        }
+        for key, title in chapter_titles.items():
+            content = chapters.get(key, "")
+            if content:
+                lines.extend([title, "-" * len(title), content, ""])
+
+        lines.extend(["", f"Compiled: {story.get('compiled_at', '')}", "Generated by Reachy Care"])
+        text = "\n".join(lines)
+
+        from flask import Response
+        return Response(
+            text,
+            mimetype="text/plain",
+            headers={"Content-Disposition": f"attachment; filename=life_story_{patient_id}.txt"},
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/widgets", methods=["GET"])
+@login_required
+def get_dashboard_widgets():
+    """Get the user's dashboard widget configuration."""
+    user = session.get("user", {})
+    username = user.get("username", "default")
+    try:
+        config = db.get_settings()
+        widgets = config.get(f"widgets_{username}", "")
+        if widgets:
+            return jsonify(json.loads(widgets))
+        # Default widget layout
+        return jsonify([
+            {"id": "mood", "title": "Current Mood", "visible": True, "order": 0},
+            {"id": "alerts", "title": "Recent Alerts", "visible": True, "order": 1},
+            {"id": "conversation", "title": "Conversation", "visible": True, "order": 2},
+            {"id": "vitals", "title": "Vitals", "visible": True, "order": 3},
+            {"id": "medications", "title": "Medications", "visible": True, "order": 4},
+            {"id": "cognitive", "title": "Cognitive Scores", "visible": True, "order": 5},
+            {"id": "activity", "title": "Activity Log", "visible": True, "order": 6},
+            {"id": "journal", "title": "Daily Journal", "visible": False, "order": 7},
+            {"id": "wishes", "title": "Wish List", "visible": False, "order": 8},
+        ])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/widgets", methods=["POST"])
+@login_required
+def save_dashboard_widgets():
+    """Save the user's dashboard widget configuration."""
+    user = session.get("user", {})
+    username = user.get("username", "default")
+    data, err = require_json()
+    if err:
+        return err
+    try:
+        db.save_settings(**{f"widgets_{username}": json.dumps(data)})
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/user/theme", methods=["GET"])
+@login_required
+def get_user_theme():
+    """Get the user's theme preference."""
+    user = session.get("user", {})
+    username = user.get("username", "default")
+    try:
+        settings = db.get_settings()
+        theme = settings.get(f"theme_{username}", "dark")
+        return jsonify({"theme": theme})
+    except Exception:
+        return jsonify({"theme": "dark"})
+
+
+@app.route("/api/user/theme", methods=["POST"])
+@login_required
+def set_user_theme():
+    """Save the user's theme preference."""
+    user = session.get("user", {})
+    username = user.get("username", "default")
+    data, err = require_json()
+    if err:
+        return err
+    theme = data.get("theme", "dark")
+    if theme not in ("dark", "light"):
+        return jsonify({"error": "Theme must be 'dark' or 'light'"}), 400
+    try:
+        db.save_settings(**{f"theme_{username}": theme})
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/bot/profile", methods=["POST"])
+@login_required
+def update_bot_profile():
+    """Update patient profile details from the dashboard."""
+    data, err = require_json()
+    if err:
+        return err
+    patient_id = data.get("patient_id", "default")
+    try:
+        db.update_bot_profile(
+            patient_id=patient_id,
+            name=sanitize_short(data.get("name", "")),
+            preferred_name=sanitize_short(data.get("preferred_name", "")),
+            age=data.get("age"),
+            favorite_topic=sanitize_short(data.get("favorite_topic", "")),
+            personality_notes=sanitize(data.get("personality_notes", "")),
+        )
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/scheduled-activities", methods=["GET"])
+@login_required
+def get_scheduled_activities():
+    """Get all scheduled activities/reminders for calendar view."""
+    try:
+        messages = db.get_scheduled_messages()
+        meds = db.get_medications()
+        activities = []
+        for m in messages:
+            activities.append({
+                "id": m["id"], "type": "message", "text": m["text"],
+                "time": m["time"], "repeat": m.get("repeat", "once"),
+                "active": bool(m.get("active", 1)),
+            })
+        for med in meds:
+            if med.get("active"):
+                for t in med.get("times", "").split(","):
+                    t = t.strip()
+                    if t:
+                        activities.append({
+                            "id": f"med_{med['id']}", "type": "medication",
+                            "text": f"{med['name']} {med.get('dosage', '')}".strip(),
+                            "time": t, "repeat": "daily", "active": True,
+                        })
+        return jsonify(activities)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
-    print("\n=== Caregiver Dashboard ===")
+    logger.info("=== Caregiver Dashboard ===")
     port = int(os.environ.get("PORT", 5555))
     debug = os.environ.get("RAILWAY_ENVIRONMENT") is None  # debug only locally
-    print(f"Open http://localhost:{port} in your browser")
-    print("Default login: admin / admin\n")
+    logger.info("Open http://localhost:%d in your browser", port)
+    logger.info("Default login: admin / admin")
     app.run(host="0.0.0.0", port=port, debug=debug, threaded=True)

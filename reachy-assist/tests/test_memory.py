@@ -14,7 +14,7 @@ def memory_db(tmp_path, monkeypatch):
     # Ensure no OPENAI_API_KEY so we use hash fallback in tests
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     import importlib
-    import memory
+    from memory import memory
     # Reset module-level globals so each test gets a fresh embedder
     memory._embedder = None
     memory._embed_backend = None

@@ -2,8 +2,8 @@
 
 import sys
 import time
-from robot import Robot
-from emotion import EmotionDetector
+from robot.robot import Robot
+from brain.emotion import EmotionDetector
 
 
 def test_text_emotions():
@@ -60,7 +60,7 @@ def test_movements():
 def test_face_emotion():
     """Test webcam face emotion detection (3 readings)."""
     print("=== Test: Face Emotion Detection ===\n")
-    from face_emotion import FaceEmotionDetector
+    from perception.face_emotion import FaceEmotionDetector
 
     detector = FaceEmotionDetector()
     if not detector.start_camera():

@@ -11,30 +11,30 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 @pytest.fixture
 def emotion_detector():
     """Keyword-based emotion detector (no model download)."""
-    from emotion import EmotionDetector
+    from brain.emotion import EmotionDetector
     return EmotionDetector(backend="keywords")
 
 
 @pytest.fixture
 def checkin():
     """Fresh DailyCheckIn instance."""
-    from checkin import DailyCheckIn
+    from health.checkin import DailyCheckIn
     return DailyCheckIn()
 
 
 @pytest.fixture
 def cognitive():
     """Fresh CognitiveExercises instance."""
-    from cognitive import CognitiveExercises
+    from brain.cognitive import CognitiveExercises
     return CognitiveExercises()
 
 
 @pytest.fixture
 def reminder_manager(tmp_path, monkeypatch):
     """ReminderManager that uses a temp file instead of the real one."""
-    import reminders
+    from integration import reminders
     monkeypatch.setattr(reminders, "REMINDERS_FILE", str(tmp_path / "reminders.json"))
-    from reminders import ReminderManager
+    from integration.reminders import ReminderManager
     return ReminderManager()
 
 
@@ -42,10 +42,10 @@ def reminder_manager(tmp_path, monkeypatch):
 def brain_fallback(monkeypatch):
     """Brain with no LLM backend (uses smart fallback)."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    from brain import Brain
+    from brain.brain import Brain
     # Reset memory module globals so it uses hash fallback
     try:
-        import memory
+        from memory import memory
         memory._embedder = None
         memory._embed_backend = None
     except Exception:
@@ -57,9 +57,9 @@ def brain_fallback(monkeypatch):
 def brain_with_memory(monkeypatch):
     """Brain with conversation memory (no LLM backend)."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    from brain import Brain
+    from brain.brain import Brain
     try:
-        import memory
+        from memory import memory
         memory._embedder = None
         memory._embed_backend = None
     except Exception:
@@ -73,7 +73,7 @@ def brain_with_memory(monkeypatch):
 def gratitude(monkeypatch):
     """GratitudeSession with Supabase mocked out."""
     _mock_supabase(monkeypatch)
-    from gratitude import GratitudeSession
+    from activities.gratitude import GratitudeSession
     return GratitudeSession(patient_id="test")
 
 
@@ -81,21 +81,21 @@ def gratitude(monkeypatch):
 def quiz(monkeypatch):
     """PersonalQuiz with Supabase mocked to return sample facts."""
     _mock_supabase(monkeypatch)
-    from personal_quiz import PersonalQuiz
+    from activities.personal_quiz import PersonalQuiz
     return PersonalQuiz(patient_id="test")
 
 
 @pytest.fixture
 def singalong():
     """Fresh SingAlong instance."""
-    from singalong import SingAlong
+    from activities.singalong import SingAlong
     return SingAlong()
 
 
 @pytest.fixture
 def story():
     """InteractiveStory with sample patient data."""
-    from interactive_story import InteractiveStory
+    from activities.interactive_story import InteractiveStory
     return InteractiveStory(
         patient_id="test",
         patient_name="Margaret",
@@ -121,3 +121,4 @@ def _mock_supabase(monkeypatch):
     fake.save_conversation = lambda *a, **kw: None
     fake.get_session_summaries = lambda *a, **kw: []
     monkeypatch.setitem(sys.modules, "db_supabase", fake)
+    monkeypatch.setitem(sys.modules, "memory.db_supabase", fake)

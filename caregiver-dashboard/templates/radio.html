@@ -1,0 +1,180 @@
+{% extends "_base.html" %}
+{% block title %}Radio DJ — Reachy Care{% endblock %}
+
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">📻 Radio Reachy</div>
+      <div class="page-subtitle">Personal DJ mode — music, commentary, and dedications</div>
+    </div>
+  </div>
+
+  <!-- Status Card -->
+  <div class="grid-2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Now Playing</span>
+        <span id="onAirBadge" class="badge badge-muted">OFF AIR</span>
+      </div>
+      <div style="text-align:center;padding:20px 0;">
+        <div id="trackIcon" style="font-size:64px;margin-bottom:12px;">🎵</div>
+        <div id="trackName" style="font-size:18px;font-weight:600;margin-bottom:4px;">No track</div>
+        <div id="moodLabel" style="font-size:13px;color:var(--muted);">Mood: —</div>
+        <div id="songsPlayed" style="font-size:12px;color:var(--muted);margin-top:4px;">Songs played: 0</div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:12px;">
+        <button class="btn btn-primary" onclick="startRadio()" id="btnStart">▶ Start Radio</button>
+        <button class="btn btn-ghost" onclick="skipTrack()" id="btnSkip" disabled>⏭ Skip</button>
+        <button class="btn btn-danger" onclick="stopRadio()" id="btnStop" disabled>⏹ Stop</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Mood Selector</span>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;">Pick a mood to change the playlist vibe.</p>
+      <div class="grid-3" id="moodGrid">
+        <button class="btn btn-ghost mood-btn" data-mood="happy" onclick="setMood('happy')">😊 Happy</button>
+        <button class="btn btn-ghost mood-btn" data-mood="calm" onclick="setMood('calm')">😌 Calm</button>
+        <button class="btn btn-ghost mood-btn" data-mood="energetic" onclick="setMood('energetic')">⚡ Energetic</button>
+        <button class="btn btn-ghost mood-btn" data-mood="nostalgic" onclick="setMood('nostalgic')">🕰️ Nostalgic</button>
+        <button class="btn btn-ghost mood-btn" data-mood="sleepy" onclick="setMood('sleepy')">😴 Sleepy</button>
+        <button class="btn btn-ghost mood-btn" data-mood="sad" onclick="setMood('sad')">🎭 Melancholy</button>
+      </div>
+
+      <div class="card-header" style="margin-top:20px;">
+        <span class="card-title">Song Request</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="requestInput" class="form-input" placeholder="e.g. play something happy, play a lullaby..." style="flex:1;">
+        <button class="btn btn-primary" onclick="sendRequest()">🎤 Request</button>
+      </div>
+      <div id="requestResponse" style="font-size:13px;color:var(--muted);margin-top:8px;min-height:20px;"></div>
+    </div>
+  </div>
+
+  <!-- Info Card -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">How It Works</span>
+    </div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.7;">
+      <p>Radio Reachy is a personal DJ that plays real songs from YouTube, shares fun facts, and makes dedications. If YouTube isn't available, it falls back to synthesized melodies.</p>
+      <p style="margin-top:8px;">You can also control it with voice commands when talking to Reachy:</p>
+      <div class="grid-2" style="margin-top:12px;">
+        <div>
+          <div style="color:var(--text);font-weight:500;margin-bottom:4px;">Start / Stop</div>
+          <div>"Play music" · "Turn on the radio" · "Stop the music"</div>
+        </div>
+        <div>
+          <div style="color:var(--text);font-weight:500;margin-bottom:4px;">Control</div>
+          <div>"Next song" · "Skip" · "Play some Frank Sinatra" · "Play something happy"</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var pollTimer = null;
+
+function api(path, method, body) {
+  var opts = {method: method || 'GET', headers: {'Content-Type': 'application/json'}};
+  if (body) opts.body = JSON.stringify(body);
+  return fetch(path, opts).then(function(r) { return r.json(); });
+}
+
+function refreshStatus() {
+  api('/api/radio/status').then(function(s) {
+    var onAir = s.on_air || false;
+    document.getElementById('onAirBadge').className = 'badge ' + (onAir ? 'badge-green' : 'badge-muted');
+    document.getElementById('onAirBadge').textContent = onAir ? 'ON AIR' : 'OFF AIR';
+
+    var trackText = 'No track';
+    if (onAir && s.current_track) {
+      trackText = s.current_track.replace(/_/g, ' ');
+      if (s.current_artist && s.current_artist !== 'Unknown' && s.current_artist !== '') {
+        trackText += ' — ' + s.current_artist;
+      }
+    } else if (onAir) {
+      trackText = 'Loading...';
+    }
+    document.getElementById('trackName').textContent = trackText;
+
+    var sourceLabel = '';
+    if (s.source === 'youtube') sourceLabel = ' 🎬 YouTube';
+    else if (s.source === 'local') sourceLabel = ' 💿 Local';
+    else if (s.source === 'melody') sourceLabel = ' 🎹 Melody';
+    document.getElementById('trackIcon').textContent = onAir ? '🎶' : '🎵';
+    document.getElementById('moodLabel').textContent = 'Mood: ' + (s.mood || '—') + sourceLabel;
+    document.getElementById('songsPlayed').textContent = 'Songs played: ' + (s.songs_played || 0) +
+      (s.youtube_available ? ' · YouTube ✓' : ' · YouTube ✗');
+    document.getElementById('btnStart').disabled = onAir;
+    document.getElementById('btnSkip').disabled = !onAir;
+    document.getElementById('btnStop').disabled = !onAir;
+
+    // Highlight active mood button
+    document.querySelectorAll('.mood-btn').forEach(function(btn) {
+      if (btn.dataset.mood === s.mood) {
+        btn.classList.add('btn-primary');
+        btn.classList.remove('btn-ghost');
+      } else {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-ghost');
+      }
+    });
+  }).catch(function() {});
+}
+
+function startRadio() {
+  api('/api/radio/start', 'POST').then(function(r) {
+    showToast(r.message || 'Radio started');
+    refreshStatus();
+  });
+}
+
+function stopRadio() {
+  api('/api/radio/stop', 'POST').then(function(r) {
+    showToast(r.message || 'Radio stopped');
+    refreshStatus();
+  });
+}
+
+function skipTrack() {
+  api('/api/radio/skip', 'POST').then(function(r) {
+    showToast(r.message || 'Skipped');
+    refreshStatus();
+  });
+}
+
+function setMood(mood) {
+  api('/api/radio/mood', 'POST', {mood: mood}).then(function() {
+    showToast('Mood set to ' + mood);
+    refreshStatus();
+  });
+}
+
+function sendRequest() {
+  var input = document.getElementById('requestInput');
+  var text = input.value.trim();
+  if (!text) return;
+  api('/api/radio/request', 'POST', {text: text}).then(function(r) {
+    document.getElementById('requestResponse').textContent = r.message || 'Request sent';
+    input.value = '';
+    refreshStatus();
+  });
+}
+
+document.getElementById('requestInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') sendRequest();
+});
+
+// Poll status every 3 seconds
+refreshStatus();
+pollTimer = setInterval(refreshStatus, 3000);
+</script>
+{% endblock %}

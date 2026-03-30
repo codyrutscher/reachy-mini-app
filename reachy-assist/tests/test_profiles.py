@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from profiles import get_profile, list_profiles, get_care_response, PROFILES
+from core.profiles import get_profile, list_profiles, get_care_response, PROFILES
 
 
 class TestProfiles:

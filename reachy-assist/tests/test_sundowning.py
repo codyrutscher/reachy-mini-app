@@ -1,7 +1,7 @@
 """Tests for the sundowning detection module."""
 
 import pytest
-from sundowning import check_sundowning, _SUNDOWNING_KEYWORDS
+from health.sundowning import check_sundowning, _SUNDOWNING_KEYWORDS
 
 
 class TestSundowning:

@@ -60,8 +60,8 @@ def main():
 
     # Realtime mode — full-duplex voice via WebSocket, bypasses the normal pipeline
     if args.realtime:
-        from config import SYSTEM_PROMPT
-        from realtime_conversation import RealtimeConversation
+        from core.config import SYSTEM_PROMPT
+        from integration.realtime_conversation import RealtimeConversation
 
         voice = os.environ.get("REACHY_VOICE", "shimmer")
         # Realtime API supports: alloy, echo, shimmer (standard) + ash, ballad, coral, sage, verse

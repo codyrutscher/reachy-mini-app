@@ -3,7 +3,7 @@
 import sys
 import types
 import pytest
-from anomaly_detection import check_anomalies, build_baseline
+from health.anomaly_detection import check_anomalies, build_baseline
 
 
 def _make_fake_db(sessions):

@@ -16,6 +16,9 @@ import json
 import os
 import threading
 from datetime import datetime
+from log_config import get_logger
+
+logger = get_logger("db_postgres")
 
 _pool = None
 _local = threading.local()
@@ -207,7 +210,7 @@ def init_db():
                 "INSERT INTO patient_status (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
                 (k, v),
             )
-    print(f"[DB] PostgreSQL database ready: {DATABASE_URL[:40]}...")
+    logger.info("PostgreSQL database ready: %s...", DATABASE_URL[:40])
 
 
 # ── Alerts ──────────────────────────────────────────────────────────
@@ -733,12 +736,11 @@ def get_bot_session_summaries(patient_id="default", limit=20):
     """Read from bot_session_summaries — end-of-session reports."""
     rows = _execute(
         "SELECT id, interactions, dominant_mood, mood_distribution, topics_discussed, "
-        "facts_learned, duration_minutes, created_at "
+        "facts_learned, duration_minutes, summary_text, engagement_avg, created_at "
         "FROM bot_session_summaries WHERE patient_id=%s ORDER BY id DESC LIMIT %s",
         (patient_id, limit), fetch=True,
     ) or []
     for r in rows:
-        # Parse JSON strings into real objects
         for field in ("mood_distribution", "topics_discussed", "facts_learned"):
             val = r.get(field, "")
             if isinstance(val, str):
@@ -765,6 +767,25 @@ def get_bot_alerts(patient_id="default", limit=50):
         "FROM bot_caregiver_alerts WHERE patient_id=%s ORDER BY id DESC LIMIT %s",
         (patient_id, limit), fetch=True,
     ) or []
+
+
+def get_bot_conversation_intel(patient_id="default"):
+    """Read conversational intelligence data — humor hits, topic avoidance, names."""
+    row = _execute(
+        "SELECT humor_hits, topic_mood_map, mentioned_names, engagement_avg, updated_at "
+        "FROM bot_conversation_intel WHERE patient_id=%s",
+        (patient_id,), fetchone=True,
+    )
+    if not row:
+        return None
+    for field in ("humor_hits", "topic_mood_map", "mentioned_names"):
+        val = row.get(field, "")
+        if isinstance(val, str):
+            try:
+                row[field] = json.loads(val)
+            except Exception:
+                pass
+    return row
 
 
 def get_bot_profile(patient_id="default"):
@@ -849,3 +870,333 @@ def get_bot_streaks(patient_id="default"):
         else:
             break
     return streak
+
+
+def get_bot_life_story(patient_id="default"):
+    """Read the compiled life story from life_stories table."""
+    row = _execute(
+        "SELECT story, compiled_at FROM life_stories WHERE patient_id=%s",
+        (patient_id,), fetchone=True,
+    )
+    if not row:
+        return None
+    import json
+    story = row["story"]
+    if isinstance(story, str):
+        story = json.loads(story)
+    story["compiled_at"] = str(row.get("compiled_at", ""))
+    return story
+
+
+def compile_bot_life_story(patient_id="default"):
+    """Trigger life story compilation via the reachy-assist module.
+
+    Falls back to gathering raw data and returning it if the compiler
+    is not available (e.g. no OpenAI key).
+    """
+    try:
+        import sys, os
+        # Add reachy-assist to path if needed
+        ra_path = os.path.join(os.path.dirname(__file__), "..", "reachy-assist")
+        if ra_path not in sys.path:
+            sys.path.insert(0, ra_path)
+        from memory.life_story import update_story
+        return update_story(patient_id)
+    except Exception:
+        # Fallback: return raw facts as a simple story
+        facts = get_bot_facts(patient_id)
+        if not facts:
+            return None
+        chapters = {}
+        for f in facts:
+            cat = f.get("category", "general")
+            if cat not in chapters:
+                chapters[cat] = []
+            chapters[cat].append(f.get("fact", ""))
+        return {
+            "name": "",
+            "chapters": {k: " ".join(v) for k, v in chapters.items()},
+            "compiled_at": "",
+            "patient_id": patient_id,
+        }
+
+
+def get_bot_daily_journal(patient_id="default", limit=30):
+    """Get recent daily journal entries."""
+    rows = _execute(
+        "SELECT entry_date, entry, mood, topics, interactions, duration_minutes, created_at "
+        "FROM daily_journal WHERE patient_id=%s ORDER BY entry_date DESC LIMIT %s",
+        (patient_id, limit), fetch=True,
+    ) or []
+    import json
+    results = []
+    for r in rows:
+        topics = r.get("topics", "[]")
+        if isinstance(topics, str):
+            topics = json.loads(topics)
+        results.append({
+            "date": str(r["entry_date"]),
+            "entry": r["entry"],
+            "mood": r.get("mood", "neutral"),
+            "topics": topics,
+            "interactions": r.get("interactions", 0),
+            "duration_minutes": r.get("duration_minutes", 0),
+        })
+    return results
+
+
+def generate_bot_journal_entry(patient_id="default", for_date=""):
+    """Trigger journal entry generation via reachy-assist module."""
+    try:
+        import sys, os
+        ra_path = os.path.join(os.path.dirname(__file__), "..", "reachy-assist")
+        if ra_path not in sys.path:
+            sys.path.insert(0, ra_path)
+        from memory.daily_journal import generate_entry
+        return generate_entry(patient_id, for_date=for_date)
+    except Exception:
+        return None
+
+
+def get_bot_relationship_map(patient_id="default"):
+    """Build a graph structure from knowledge entities and relations.
+
+    Returns {nodes: [{id, label, type, attributes}], edges: [{source, target, relation, confidence}]}
+    """
+    import json
+
+    entities = _execute(
+        "SELECT name, entity_type, attributes FROM bot_knowledge_entities WHERE patient_id=%s",
+        (patient_id,), fetch=True,
+    ) or []
+
+    relations = _execute(
+        "SELECT subject, relation, object, confidence FROM bot_knowledge_relations WHERE patient_id=%s",
+        (patient_id,), fetch=True,
+    ) or []
+
+    # Build node set (include patient as central node)
+    node_map = {"patient": {"id": "patient", "label": "Patient", "type": "patient", "attributes": {}}}
+    for e in entities:
+        name = e["name"]
+        attrs = e.get("attributes", {})
+        if isinstance(attrs, str):
+            attrs = json.loads(attrs) if attrs else {}
+        node_map[name] = {
+            "id": name,
+            "label": name.title(),
+            "type": e.get("entity_type", "unknown"),
+            "attributes": attrs,
+        }
+
+    # Build edges, adding any nodes referenced in relations that aren't entities
+    edges = []
+    for r in relations:
+        subj = r["subject"]
+        obj = r["object"]
+        if subj not in node_map:
+            node_map[subj] = {"id": subj, "label": subj.title(), "type": "unknown", "attributes": {}}
+        if obj not in node_map:
+            node_map[obj] = {"id": obj, "label": obj.title(), "type": "concept", "attributes": {}}
+        edges.append({
+            "source": subj,
+            "target": obj,
+            "relation": r["relation"].replace("_", " "),
+            "confidence": r.get("confidence", 1.0),
+        })
+
+    return {"nodes": list(node_map.values()), "edges": edges}
+
+
+def get_bot_conversation_replay(patient_id="default", date_str="", limit=200):
+    """Get timestamped conversation turns for replay, optionally filtered by date."""
+    if date_str:
+        rows = _execute(
+            "SELECT topic, text, speaker, emotion, created_at "
+            "FROM bot_conversation_log WHERE patient_id=%s AND created_at::date = %s "
+            "ORDER BY created_at ASC LIMIT %s",
+            (patient_id, date_str, limit), fetch=True,
+        ) or []
+    else:
+        rows = _execute(
+            "SELECT topic, text, speaker, emotion, created_at "
+            "FROM bot_conversation_log WHERE patient_id=%s "
+            "ORDER BY created_at DESC LIMIT %s",
+            (patient_id, limit), fetch=True,
+        ) or []
+        rows.reverse()  # chronological order
+
+    return [
+        {
+            "speaker": r.get("speaker", ""),
+            "text": r.get("text", ""),
+            "emotion": r.get("emotion", ""),
+            "topic": r.get("topic", ""),
+            "time": str(r.get("created_at", "")),
+        }
+        for r in rows
+    ]
+
+
+def get_bot_session_dates(patient_id="default"):
+    """Get distinct dates that have conversation data."""
+    rows = _execute(
+        "SELECT DISTINCT created_at::date AS session_date "
+        "FROM bot_conversation_log WHERE patient_id=%s "
+        "ORDER BY session_date DESC LIMIT 90",
+        (patient_id,), fetch=True,
+    ) or []
+    return [str(r["session_date"]) for r in rows]
+
+
+def get_bot_wishes(patient_id="default", limit=30):
+    """Get patient wishes for family dashboard."""
+    rows = _execute(
+        "SELECT id, wish, full_text, fulfilled, created_at FROM wish_list "
+        "WHERE patient_id=%s ORDER BY created_at DESC LIMIT %s",
+        (patient_id, limit), fetch=True,
+    ) or []
+    return [{"id": r["id"], "wish": r["wish"], "full_text": r.get("full_text", ""),
+             "fulfilled": r.get("fulfilled", False),
+             "date": str(r.get("created_at", ""))} for r in rows]
+
+
+def fulfill_bot_wish(wish_id):
+    """Mark a wish as fulfilled."""
+    _execute("UPDATE wish_list SET fulfilled=TRUE WHERE id=%s", (wish_id,))
+
+
+def get_bot_advice_book(patient_id="default", limit=50):
+    """Get collected wisdom entries."""
+    rows = _execute(
+        "SELECT id, content, created_at FROM advice_book "
+        "WHERE patient_id=%s ORDER BY created_at DESC LIMIT %s",
+        (patient_id, limit), fetch=True,
+    ) or []
+    return [{"id": r["id"], "content": r["content"],
+             "date": str(r.get("created_at", ""))} for r in rows]
+
+
+def get_bot_recipes(patient_id="default", limit=20):
+    """Get collected recipes."""
+    import json
+    rows = _execute(
+        "SELECT id, name, recipe, created_at FROM recipe_book "
+        "WHERE patient_id=%s ORDER BY created_at DESC LIMIT %s",
+        (patient_id, limit), fetch=True,
+    ) or []
+    results = []
+    for r in rows:
+        recipe = r.get("recipe", "{}")
+        if isinstance(recipe, str):
+            recipe = json.loads(recipe)
+        recipe["id"] = r["id"]
+        recipe["date"] = str(r.get("created_at", ""))
+        results.append(recipe)
+    return results
+
+
+def get_active_care_plans(patient_id="default"):
+    """Get active care plans with their goals."""
+    plans = _execute(
+        "SELECT id, title, description, status, start_date, end_date "
+        "FROM care_plans WHERE patient_id=%s AND status='active' ORDER BY created_at DESC",
+        (patient_id,), fetch=True,
+    ) or []
+    for plan in plans:
+        goals = _execute(
+            "SELECT id, goal_text, target_date, completed, notes "
+            "FROM care_plan_goals WHERE plan_id=%s ORDER BY id",
+            (plan["id"],), fetch=True,
+        ) or []
+        plan["goals"] = goals
+    return plans
+
+
+def search_bot_conversations(query="", patient_id="default", limit=50):
+    """Full-text search across bot conversation log."""
+    rows = _execute(
+        "SELECT topic, text, speaker, emotion, created_at "
+        "FROM bot_conversation_log WHERE patient_id=%s AND text ILIKE %s "
+        "ORDER BY created_at DESC LIMIT %s",
+        (patient_id, f"%{query}%", limit), fetch=True,
+    ) or []
+    return [{"topic": r.get("topic", ""), "text": r.get("text", ""),
+             "speaker": r.get("speaker", ""), "emotion": r.get("emotion", ""),
+             "time": str(r.get("created_at", ""))} for r in rows]
+
+
+def get_bot_mood_calendar(patient_id="default", days=90):
+    """Get dominant mood per day for the last N days."""
+    rows = _execute(
+        """SELECT created_at::date AS day, mood, COUNT(*) AS cnt
+           FROM bot_mood_journal WHERE patient_id=%s
+           AND created_at >= NOW() - INTERVAL '%s days'
+           GROUP BY day, mood ORDER BY day DESC, cnt DESC""",
+        (patient_id, days), fetch=True,
+    ) or []
+    # Pick dominant mood per day
+    by_day = {}
+    for r in rows:
+        day = str(r["day"])
+        if day not in by_day:
+            by_day[day] = {"date": day, "mood": r["mood"], "count": r["cnt"]}
+    return list(by_day.values())
+
+
+def get_bot_topic_cloud(patient_id="default", days=30):
+    """Get topic frequency for word cloud."""
+    rows = _execute(
+        """SELECT topic, COUNT(*) AS cnt
+           FROM bot_conversation_log WHERE patient_id=%s
+           AND topic IS NOT NULL AND topic != ''
+           AND created_at >= NOW() - INTERVAL '%s days'
+           GROUP BY topic ORDER BY cnt DESC LIMIT 50""",
+        (patient_id, days), fetch=True,
+    ) or []
+    return [{"topic": r["topic"], "count": r["cnt"]} for r in rows]
+
+
+def get_bot_session_by_date(patient_id="default", date_str=""):
+    """Get session data for a specific date for comparison."""
+    import json
+    session = _execute(
+        "SELECT interactions, dominant_mood, mood_distribution, topics_discussed, "
+        "duration_minutes, summary_text, engagement_avg, created_at "
+        "FROM bot_session_summaries WHERE patient_id=%s AND created_at::date=%s "
+        "ORDER BY created_at DESC LIMIT 1",
+        (patient_id, date_str), fetchone=True,
+    )
+    if not session:
+        return {"date": date_str, "found": False}
+    mood_dist = session.get("mood_distribution", "{}")
+    if isinstance(mood_dist, str):
+        mood_dist = json.loads(mood_dist)
+    topics = session.get("topics_discussed", "[]")
+    if isinstance(topics, str):
+        topics = json.loads(topics)
+    return {
+        "date": date_str,
+        "found": True,
+        "interactions": session.get("interactions", 0),
+        "dominant_mood": session.get("dominant_mood", "neutral"),
+        "mood_distribution": mood_dist,
+        "topics": topics,
+        "duration_minutes": session.get("duration_minutes", 0),
+        "summary": session.get("summary_text", ""),
+        "engagement": session.get("engagement_avg", 0),
+    }
+
+
+def update_bot_profile(patient_id="default", **kwargs):
+    """Update patient profile in bot_patient_profile."""
+    fields = {k: v for k, v in kwargs.items() if v is not None and k in
+              ("name", "preferred_name", "age", "favorite_topic", "personality_notes")}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k}=%s" for k in fields)
+    values = list(fields.values()) + [patient_id]
+    _execute(
+        f"UPDATE bot_patient_profile SET {set_clause}, updated_at=NOW() WHERE patient_id=%s",
+        tuple(values),
+    )

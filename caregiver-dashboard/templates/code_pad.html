@@ -1,0 +1,208 @@
+{% extends "_base.html" %}
+{% block title %}Code Pad — Reachy Care{% endblock %}
+{% block extra_css %}
+<style>
+  .code-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  .code-block { background: #1e1e2e; border: 1px solid var(--border); border-radius: 12px;
+    padding: 0; overflow: hidden; position: relative; }
+  .code-header { display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; background: var(--card2); border-bottom: 1px solid var(--border); }
+  .code-lang { font-size: 12px; font-weight: 600; color: var(--cyan); text-transform: uppercase; }
+  .code-actions { display: flex; gap: 8px; }
+  .code-actions button { background: none; border: 1px solid var(--border); color: var(--muted);
+    padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; }
+  .code-actions button:hover { color: var(--text); border-color: var(--blue); }
+  pre.code-content { margin: 0; padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px; line-height: 1.6; overflow-x: auto; color: #cdd6f4; white-space: pre;
+    max-height: 500px; overflow-y: auto; }
+  .explanation-panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; max-height: 560px; overflow-y: auto; }
+  .explanation-panel p { font-size: 14px; line-height: 1.7; margin-bottom: 10px; }
+  .prompt-bar { display: flex; gap: 8px; margin-top: 16px; }
+  .prompt-bar input { flex: 1; }
+  .prompt-bar select { width: 140px; }
+  .history-item { padding: 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .history-item:hover { background: var(--card2); }
+  .history-prompt { font-size: 13px; color: var(--text); }
+  .history-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .empty-code { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 60px 20px; color: var(--muted); }
+  .empty-code .icon { font-size: 48px; margin-bottom: 12px; }
+  /* Syntax highlighting (basic) */
+  .kw { color: #cba6f7; } .str { color: #a6e3a1; } .num { color: #fab387; }
+  .cmt { color: #6c7086; font-style: italic; } .fn { color: #89b4fa; }
+  @media (max-width: 800px) { .code-container { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧑‍💻 Code Pad</div>
+      <div class="page-subtitle">Voice-to-code — ask Reachy to write code for you</div>
+    </div>
+  </div>
+
+  <div class="prompt-bar">
+    <input type="text" class="form-input" id="codePrompt" placeholder="Describe what you want to build..."
+      onkeydown="if(event.key==='Enter')generateCode()" aria-label="Code prompt">
+    <select class="form-input" id="codeLang" aria-label="Programming language">
+      <option value="python">Python</option>
+      <option value="javascript">JavaScript</option>
+      <option value="html">HTML</option>
+      <option value="css">CSS</option>
+      <option value="sql">SQL</option>
+      <option value="bash">Bash</option>
+      <option value="typescript">TypeScript</option>
+      <option value="java">Java</option>
+      <option value="rust">Rust</option>
+      <option value="go">Go</option>
+    </select>
+    <button class="btn btn-primary" onclick="generateCode()">Generate</button>
+    <button class="btn btn-ghost" onclick="explainCode()">Explain</button>
+  </div>
+
+  <div class="code-container">
+    <div>
+      <div class="code-block" id="codeBlock">
+        <div class="code-header">
+          <span class="code-lang" id="codeLangLabel">python</span>
+          <div class="code-actions">
+            <button onclick="copyCode()" title="Copy to clipboard">📋 Copy</button>
+            <button onclick="clearCode()" title="Clear">🗑️ Clear</button>
+          </div>
+        </div>
+        <pre class="code-content" id="codeContent"><span class="cmt"># Ask Reachy to write code for you!</span>
+<span class="cmt"># Type a prompt above or use voice:</span>
+<span class="cmt"># "Hey Reachy, write a function that..."</span></pre>
+      </div>
+    </div>
+    <div>
+      <div class="explanation-panel" id="explanationPanel">
+        <div class="card-title" style="margin-bottom:12px;">📖 Explanation</div>
+        <p id="explanationText" style="color:var(--muted);">
+          Generate some code, then click "Explain" to get a line-by-line walkthrough.
+        </p>
+      </div>
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title" style="margin-bottom:12px;">📜 History</div>
+        <div id="historyList">
+          <div style="color:var(--muted);font-size:13px;padding:12px;">No code generated yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+let currentCode = '';
+
+function generateCode() {
+  const prompt = document.getElementById('codePrompt').value.trim();
+  if (!prompt) return;
+  const lang = document.getElementById('codeLang').value;
+  document.getElementById('codeContent').textContent = '// Generating...';
+  document.getElementById('codeLangLabel').textContent = lang;
+
+  fetch('/api/robot/code/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prompt: prompt, language: lang})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error) {
+      document.getElementById('codeContent').textContent = '// Error: ' + data.error;
+      return;
+    }
+    currentCode = data.code || '';
+    document.getElementById('codeContent').textContent = currentCode;
+    document.getElementById('codeLangLabel').textContent = data.language || lang;
+    document.getElementById('codePrompt').value = '';
+    loadHistory();
+    showToast('Code generated!', 'success');
+  })
+  .catch(err => {
+    document.getElementById('codeContent').textContent = '// Failed to generate: ' + err;
+  });
+}
+
+function explainCode() {
+  if (!currentCode) { showToast('No code to explain', 'info'); return; }
+  document.getElementById('explanationText').textContent = 'Thinking...';
+
+  fetch('/api/robot/code/explain', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({code: currentCode})
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('explanationText').textContent = data.explanation || 'No explanation available';
+  })
+  .catch(err => {
+    document.getElementById('explanationText').textContent = 'Failed: ' + err;
+  });
+}
+
+function copyCode() {
+  if (!currentCode) return;
+  navigator.clipboard.writeText(currentCode).then(() => showToast('Copied!', 'success'));
+}
+
+function clearCode() {
+  currentCode = '';
+  document.getElementById('codeContent').innerHTML =
+    '<span class="cmt"># Ready for your next prompt!</span>';
+  document.getElementById('explanationText').textContent =
+    'Generate some code, then click "Explain" to get a walkthrough.';
+}
+
+function loadHistory() {
+  fetch('/api/robot/code/history')
+    .then(r => r.json())
+    .then(items => {
+      const el = document.getElementById('historyList');
+      if (!items.length) {
+        el.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">No code generated yet</div>';
+        return;
+      }
+      el.innerHTML = items.slice(0, 10).map(item =>
+        '<div class="history-item" onclick="loadHistoryItem(this)" data-code="' +
+        btoa(unescape(encodeURIComponent(item.code))) + '" data-lang="' + item.language + '">' +
+        '<div class="history-prompt">' + escHtml(item.prompt) + '</div>' +
+        '<div class="history-meta">' + item.language + ' · ' + item.timestamp + '</div></div>'
+      ).join('');
+    })
+    .catch(() => {});
+}
+
+function loadHistoryItem(el) {
+  currentCode = decodeURIComponent(escape(atob(el.dataset.code)));
+  document.getElementById('codeContent').textContent = currentCode;
+  document.getElementById('codeLangLabel').textContent = el.dataset.lang;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Poll for code pushed from voice commands
+setInterval(function() {
+  fetch('/api/code-pad/current')
+    .then(r => r.json())
+    .then(data => {
+      if (data.code && data.code !== currentCode) {
+        currentCode = data.code;
+        document.getElementById('codeContent').textContent = currentCode;
+        document.getElementById('codeLangLabel').textContent = data.language || 'python';
+        loadHistory();
+      }
+    })
+    .catch(() => {});
+}, 3000);
+
+loadHistory();
+</script>
+{% endblock %}

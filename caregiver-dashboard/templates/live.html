@@ -1,0 +1,145 @@
+{% extends "_base.html" %}
+{% block title %}Live View — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🔴 Live View</div>
+      <div class="page-subtitle">Real-time conversation, mood, and camera feed</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span id="liveStatus" style="font-size:12px;color:var(--green);">● Connected</span>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <!-- Camera feed -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">📷 Camera Feed</div></div>
+      <div style="background:#000;border-radius:8px;overflow:hidden;">
+        <img id="liveCam" src="/api/camera/stream" alt="Live feed"
+          style="width:100%;display:block;"
+          onerror="this.style.display='none';document.getElementById('camOff').style.display='flex';"
+          onload="document.getElementById('camOff').style.display='none';this.style.display='block';">
+        <div id="camOff" style="display:flex;align-items:center;justify-content:center;min-height:240px;color:var(--muted);">
+          📷 Camera offline
+        </div>
+      </div>
+    </div>
+
+    <!-- Mood & engagement -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">😊 Current State</div></div>
+      <div style="text-align:center;padding:20px 0;">
+        <div id="liveMoodEmoji" style="font-size:72px;">😐</div>
+        <div id="liveMoodLabel" style="font-size:18px;font-weight:600;margin-top:8px;">neutral</div>
+        <div style="margin-top:16px;display:flex;justify-content:center;gap:24px;">
+          <div class="stat">
+            <div class="stat-num" id="liveInteractions">0</div>
+            <div class="stat-label">Interactions</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" id="liveDuration">0m</div>
+            <div class="stat-label">Duration</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" id="liveEngagement">--</div>
+            <div class="stat-label">Engagement</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live conversation -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">💬 Live Conversation</div>
+      <button class="btn btn-ghost btn-sm" onclick="clearConvo()">Clear</button>
+    </div>
+    <div id="liveConvo" style="max-height:500px;overflow-y:auto;font-size:13px;line-height:1.8;padding:8px 0;">
+      <div style="color:var(--muted);text-align:center;padding:40px;">Waiting for conversation...</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var MOOD_EMOJI={joy:'😊',sadness:'😢',anger:'😠',fear:'😨',surprise:'😲',neutral:'😐',unknown:'❓'};
+var convoEl=document.getElementById('liveConvo');
+var started=false;
+var interactionCount=0;
+var sessionStart=Date.now();
+
+// SSE connection
+var es=new EventSource('/api/stream');
+es.onopen=function(){document.getElementById('liveStatus').innerHTML='● Connected';};
+es.onerror=function(){document.getElementById('liveStatus').innerHTML='<span style="color:var(--red);">● Disconnected</span>';};
+
+es.addEventListener('conversation',function(e){
+  var d=JSON.parse(e.data);
+  if(!started){convoEl.innerHTML='';started=true;}
+  var speaker=d.speaker||'';
+  var text=d.text||'';
+  var color=speaker==='patient'?'var(--cyan)':'var(--accent2)';
+  var label=speaker==='patient'?'Patient':'Reachy';
+  var time=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  convoEl.innerHTML+='<div style="padding:6px 0;border-bottom:1px solid var(--border);">'+
+    '<span style="color:'+color+';font-weight:600;">'+label+'</span> '+
+    '<span style="color:var(--muted);font-size:11px;">'+time+'</span><br>'+
+    '<span>'+text+'</span></div>';
+  convoEl.scrollTop=convoEl.scrollHeight;
+  if(speaker==='patient') interactionCount++;
+  document.getElementById('liveInteractions').textContent=interactionCount;
+});
+
+es.addEventListener('mood',function(e){
+  var d=JSON.parse(e.data);
+  var mood=d.mood||'neutral';
+  document.getElementById('liveMoodEmoji').textContent=MOOD_EMOJI[mood]||'❓';
+  document.getElementById('liveMoodLabel').textContent=mood;
+});
+
+es.addEventListener('alert',function(e){
+  var d=JSON.parse(e.data);
+  if(!started){convoEl.innerHTML='';started=true;}
+  convoEl.innerHTML+='<div style="padding:6px 0;border-bottom:1px solid var(--border);color:var(--red);">'+
+    '⚠️ Alert: '+(d.message||d.type||'')+'</div>';
+  convoEl.scrollTop=convoEl.scrollHeight;
+});
+
+// Update duration every 10s
+setInterval(function(){
+  var mins=Math.floor((Date.now()-sessionStart)/60000);
+  document.getElementById('liveDuration').textContent=mins+'m';
+},10000);
+
+// Load initial state
+fetch('/api/status').then(r=>r.json()).then(function(s){
+  var mood=s.mood||'neutral';
+  document.getElementById('liveMoodEmoji').textContent=MOOD_EMOJI[mood]||'❓';
+  document.getElementById('liveMoodLabel').textContent=mood;
+});
+
+// Load recent conversation
+fetch('/api/conversation?limit=20').then(r=>r.json()).then(function(msgs){
+  if(msgs&&msgs.length){
+    convoEl.innerHTML='';started=true;
+    msgs.forEach(function(d){
+      var speaker=d.speaker||'';
+      var text=d.text||'';
+      var color=speaker==='patient'?'var(--cyan)':'var(--accent2)';
+      var label=speaker==='patient'?'Patient':'Reachy';
+      convoEl.innerHTML+='<div style="padding:6px 0;border-bottom:1px solid var(--border);">'+
+        '<span style="color:'+color+';font-weight:600;">'+label+'</span> '+
+        '<span style="color:var(--muted);font-size:11px;">'+d.time+'</span><br>'+
+        '<span>'+text+'</span></div>';
+    });
+    convoEl.scrollTop=convoEl.scrollHeight;
+  }
+});
+
+function clearConvo(){convoEl.innerHTML='<div style="color:var(--muted);text-align:center;padding:40px;">Cleared</div>';started=false;}
+</script>
+{% endblock %}

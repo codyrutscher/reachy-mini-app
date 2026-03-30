@@ -42,7 +42,7 @@ class TestReminderManager:
 
     def test_persistence(self, reminder_manager, tmp_path, monkeypatch):
         """Data should persist to disk and reload."""
-        import reminders
+        from integration import reminders
         reminder_manager.add_medication("TestMed", ["09:00"])
         # Create a new manager pointing to same file
         rm2 = reminders.ReminderManager()

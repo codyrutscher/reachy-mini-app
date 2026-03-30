@@ -59,6 +59,7 @@
     {% endif %}
     <div class="settings-nav-item" onclick="showSection('appearance')">🎨 Appearance</div>
     <div class="settings-nav-item" onclick="showSection('robot')">🤖 Robot</div>
+    <div class="settings-nav-item" onclick="showSection('voice')">🗣️ Voice Cloning</div>
     <div class="settings-nav-item" onclick="showSection('data')">🗄️ Data & Export</div>
     <div class="settings-nav-item" onclick="showSection('about')">ℹ️ About</div>
   </nav>
@@ -193,6 +194,57 @@
             <span>SSE: <span id="sseStatus" class="badge badge-green">Connected</span></span>
             <span>Camera: <span id="camStatusSetting" class="badge badge-muted">Unknown</span></span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Voice Cloning Section -->
+    <div class="settings-section" id="sec-voice">
+      <div class="section-title">🗣️ Voice Cloning</div>
+      <div class="section-desc">Let Reachy speak in a familiar voice — a family member or trusted person</div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <div style="font-size:14px;font-weight:500;">Voice Profiles</div>
+          <span id="voiceStatusBadge" class="badge badge-muted">Checking...</span>
+        </div>
+        <div id="voiceProfileList" style="margin-bottom:14px;">
+          <div style="color:var(--muted);font-size:13px;">Loading...</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="resetVoice()" style="margin-bottom:12px;">🔄 Reset to Default Voice</button>
+      </div>
+
+      <div class="card" style="margin-bottom:16px;">
+        <div style="font-size:14px;font-weight:500;margin-bottom:12px;">Upload New Voice Sample</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:14px;">
+          Record a 30-second clip of the person speaking naturally. Longer samples give better results.
+          Supported formats: WAV, MP3, M4A, OGG, FLAC.
+        </p>
+        <div class="form-group">
+          <label class="form-label">Voice Name</label>
+          <input class="form-input" id="voiceName" placeholder="e.g. Grandma Mary">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" id="voiceDesc" placeholder="e.g. Mary's warm, gentle voice">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Audio Sample</label>
+          <input type="file" id="voiceSample" accept=".wav,.mp3,.m4a,.ogg,.flac,.webm"
+            style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:8px;width:100%;color:var(--text);font-size:13px;">
+        </div>
+        <button class="btn btn-primary" onclick="uploadVoice()" id="uploadVoiceBtn">🎙️ Create Voice Profile</button>
+        <div id="voiceUploadMsg" style="font-size:13px;margin-top:8px;min-height:20px;"></div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:14px;font-weight:500;margin-bottom:8px;">How It Works</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.7;">
+          <p>1. Upload a 30-second audio clip of the person's voice</p>
+          <p>2. ElevenLabs creates a voice clone from the sample</p>
+          <p>3. Click "Activate" to make Reachy speak in that voice</p>
+          <p>4. Use "Preview" to hear what it sounds like before enabling</p>
+          <p style="margin-top:8px;color:var(--orange);">⚠️ Requires an ElevenLabs API key set in the robot's .env file (ELEVENLABS_API_KEY)</p>
         </div>
       </div>
     </div>
@@ -511,5 +563,110 @@ checkNotifs();
 loadSettings();
 loadUsers();
 checkCameraStatus();
+
+// Voice cloning
+async function loadVoiceStatus() {
+  var badge = document.getElementById('voiceStatusBadge');
+  var list = document.getElementById('voiceProfileList');
+  try {
+    var res = await fetch('/api/voice/status');
+    var s = await res.json();
+    if (s.available) {
+      badge.className = 'badge badge-green'; badge.textContent = 'ElevenLabs Connected';
+    } else if (s.has_api_key) {
+      badge.className = 'badge badge-orange'; badge.textContent = 'Package Missing';
+    } else {
+      badge.className = 'badge badge-muted'; badge.textContent = 'No API Key';
+    }
+    var profiles = s.profiles || [];
+    if (!profiles.length) {
+      list.innerHTML = '<div style="color:var(--muted);font-size:13px;">No voice profiles yet. Upload a sample below.</div>';
+      return;
+    }
+    list.innerHTML = profiles.map(function(p) {
+      var activeBadge = p.is_active ? '<span class="badge badge-green" style="margin-left:8px;">Active</span>' : '';
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--card2);border-radius:8px;margin-bottom:6px;">' +
+        '<div style="font-size:24px;">🗣️</div>' +
+        '<div style="flex:1;"><div style="font-size:14px;font-weight:500;">' + p.name + activeBadge + '</div>' +
+        '<div style="font-size:12px;color:var(--muted);">' + (p.description || 'No description') + '</div></div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="previewVoice(\'' + p.name + '\')">🔊 Preview</button>' +
+        (p.is_active ? '' : '<button class="btn btn-primary btn-sm" onclick="activateVoice(\'' + p.name + '\')">✓ Activate</button>') +
+        '<button class="btn btn-danger btn-sm" onclick="deleteVoice(\'' + p.name + '\')">✕</button>' +
+        '</div>';
+    }).join('');
+  } catch (e) {
+    badge.className = 'badge badge-red'; badge.textContent = 'Unreachable';
+    list.innerHTML = '<div style="color:var(--red);font-size:13px;">Could not connect to robot API</div>';
+  }
+}
+
+async function uploadVoice() {
+  var name = document.getElementById('voiceName').value.trim();
+  var desc = document.getElementById('voiceDesc').value.trim();
+  var fileInput = document.getElementById('voiceSample');
+  var msg = document.getElementById('voiceUploadMsg');
+  if (!name) { msg.style.color = 'var(--red)'; msg.textContent = 'Voice name is required'; return; }
+  if (!fileInput.files.length) { msg.style.color = 'var(--red)'; msg.textContent = 'Please select an audio file'; return; }
+  var btn = document.getElementById('uploadVoiceBtn');
+  btn.disabled = true; btn.textContent = '⏳ Uploading & Cloning...';
+  msg.style.color = 'var(--muted)'; msg.textContent = 'This may take 15-30 seconds...';
+  var fd = new FormData();
+  fd.append('name', name);
+  fd.append('description', desc);
+  fd.append('sample', fileInput.files[0]);
+  try {
+    var res = await fetch('/api/voice/create', { method: 'POST', body: fd });
+    var data = await res.json();
+    if (data.error) {
+      msg.style.color = 'var(--red)'; msg.textContent = data.error;
+    } else {
+      msg.style.color = 'var(--green)'; msg.textContent = 'Voice profile created! You can now activate it.';
+      document.getElementById('voiceName').value = '';
+      document.getElementById('voiceDesc').value = '';
+      fileInput.value = '';
+      loadVoiceStatus();
+    }
+  } catch (e) {
+    msg.style.color = 'var(--red)'; msg.textContent = 'Upload failed: ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = '🎙️ Create Voice Profile';
+}
+
+async function activateVoice(name) {
+  await fetch('/api/voice/activate', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name: name}) });
+  showToast('Voice activated: ' + name);
+  loadVoiceStatus();
+}
+
+async function resetVoice() {
+  await fetch('/api/voice/activate', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name: null}) });
+  showToast('Voice reset to default');
+  loadVoiceStatus();
+}
+
+async function deleteVoice(name) {
+  if (!confirm('Delete voice profile "' + name + '"? This cannot be undone.')) return;
+  await fetch('/api/voice/delete', { method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name: name}) });
+  showToast('Voice deleted');
+  loadVoiceStatus();
+}
+
+async function previewVoice(name) {
+  showToast('Generating preview...', 'info');
+  try {
+    var res = await fetch('/api/voice/preview', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name: name}) });
+    if (!res.ok) { showToast('Preview failed', 'error'); return; }
+    var blob = await res.blob();
+    var url = URL.createObjectURL(blob);
+    var audio = new Audio(url);
+    audio.play();
+  } catch (e) { showToast('Preview error: ' + e.message, 'error'); }
+}
+
+loadVoiceStatus();
 </script>
 {% endblock %}

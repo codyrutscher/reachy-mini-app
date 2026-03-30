@@ -1,0 +1,199 @@
+{% extends "_base.html" %}
+{% block title %}Analytics — Reachy Care{% endblock %}
+{% block body %}
+<div class="page">
+  <div class="page-header">
+    <div>
+      <div class="page-title">🧠 Conversation Analytics</div>
+      <div class="page-subtitle">Engagement trends, humor patterns, topic insights, and conversational intelligence</div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">📊 Engagement Over Sessions</div></div>
+      <canvas id="engagementChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">😂 What Makes Them Laugh</div></div>
+      <div id="humorList" style="padding:10px 0;"></div>
+      <div class="empty" id="humorEmpty"><div class="empty-icon">😂</div><p>No humor data yet.</p></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚠️ Topics to Avoid</div></div>
+      <div id="avoidList" style="padding:10px 0;"></div>
+      <div class="empty" id="avoidEmpty"><div class="empty-icon">🚫</div><p>No avoidance patterns detected yet.</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">👥 People They've Mentioned</div></div>
+      <div id="namesList" style="padding:10px 0;"></div>
+      <div class="empty" id="namesEmpty"><div class="empty-icon">👥</div><p>No names captured yet.</p></div>
+    </div>
+  </div>
+
+  <div class="grid-2" style="margin-bottom:18px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title">💬 Session Quality Trend</div></div>
+      <canvas id="qualityChart" height="200"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎯 Favorite Topics</div></div>
+      <div id="topicsList" style="padding:10px 0;"></div>
+      <div class="empty" id="topicsEmpty"><div class="empty-icon">💬</div><p>No topic data yet.</p></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+var intel={}, sessions=[];
+
+async function load(){
+  try { intel=await fetch('/api/bot/intel').then(r=>r.json()); } catch(e){ intel={}; }
+  try { sessions=await fetch('/api/bot/sessions?limit=30').then(r=>r.json()); } catch(e){ sessions=[]; }
+  if(!Array.isArray(sessions)) sessions=[];
+  renderHumor();
+  renderAvoidance();
+  renderNames();
+  renderEngagement();
+  renderQuality();
+  renderTopics();
+}
+
+function renderHumor(){
+  var el=document.getElementById('humorList'), empty=document.getElementById('humorEmpty');
+  var hits=intel.humor_hits||[];
+  if(!hits.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var counts={};
+  hits.forEach(function(h){counts[h]=(counts[h]||0)+1;});
+  var sorted=Object.entries(counts).sort(function(a,b){return b[1]-a[1];});
+  el.innerHTML=sorted.map(function(e){
+    var pct=Math.round(e[1]/hits.length*100);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:20px;">😂</span>'+
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;">'+e[0]+'</div>'+
+      '<div style="width:100%;height:6px;background:var(--input-bg);border-radius:3px;margin-top:4px;">'+
+      '<div style="width:'+pct+'%;height:100%;background:#eab308;border-radius:3px;"></div></div></div>'+
+      '<span style="font-size:12px;color:var(--muted);">'+e[1]+'x</span></div>';
+  }).join('');
+}
+
+function renderAvoidance(){
+  var el=document.getElementById('avoidList'), empty=document.getElementById('avoidEmpty');
+  var map=intel.topic_mood_map||{};
+  var avoid=[];
+  Object.entries(map).forEach(function(e){
+    var topic=e[0], moods=e[1];
+    if(moods.length>=3){
+      var neg=moods.filter(function(m){return m==='sadness'||m==='anger'||m==='fear';}).length;
+      if(neg/moods.length>=0.6) avoid.push({topic:topic,pct:Math.round(neg/moods.length*100),count:moods.length});
+    }
+  });
+  if(!avoid.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=avoid.map(function(a){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:20px;">🚫</span>'+
+      '<div style="flex:1;"><div style="font-size:13px;font-weight:500;">'+a.topic+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);">'+a.pct+'% negative reactions ('+a.count+' samples)</div></div></div>';
+  }).join('');
+}
+
+function renderNames(){
+  var el=document.getElementById('namesList'), empty=document.getElementById('namesEmpty');
+  var names=intel.mentioned_names||{};
+  var entries=Object.entries(names);
+  if(!entries.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  el.innerHTML=entries.map(function(e){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);">'+
+      '<span style="font-size:20px;">👤</span>'+
+      '<div><div style="font-size:13px;font-weight:500;">'+e[0]+'</div>'+
+      '<div style="font-size:11px;color:var(--muted);">'+e[1]+'</div></div></div>';
+  }).join('');
+}
+
+function renderEngagement(){
+  var canvas=document.getElementById('engagementChart');
+  var ctx=canvas.getContext('2d');
+  var w=canvas.width=canvas.parentElement.clientWidth-40;
+  var h=canvas.height=200;
+  ctx.clearRect(0,0,w,h);
+  var data=sessions.slice().reverse().map(function(s){return s.engagement_avg||0;});
+  if(!data.length||data.every(function(d){return d===0;})){
+    ctx.fillStyle='#8b8d97';ctx.font='14px sans-serif';ctx.fillText('No engagement data yet',w/2-70,h/2);return;
+  }
+  var max=Math.max.apply(null,data)||10;
+  var padding=30;
+  ctx.strokeStyle='#3b82f6';ctx.lineWidth=2;ctx.beginPath();
+  data.forEach(function(v,i){
+    var x=padding+i*((w-padding*2)/(data.length-1||1));
+    var y=padding+(h-padding*2)-(v/max*(h-padding*2));
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  // Fill area
+  ctx.lineTo(padding+(data.length-1)*((w-padding*2)/(data.length-1||1)),h-padding);
+  ctx.lineTo(padding,h-padding);ctx.closePath();
+  ctx.fillStyle='rgba(59,130,246,0.1)';ctx.fill();
+  // Labels
+  ctx.fillStyle='#8b8d97';ctx.font='11px sans-serif';ctx.textAlign='center';
+  ctx.fillText('0',10,h-padding+4);ctx.fillText(max.toFixed(0),10,padding+4);
+  ctx.fillText('Sessions →',w/2,h-5);
+}
+
+function renderQuality(){
+  var canvas=document.getElementById('qualityChart');
+  var ctx=canvas.getContext('2d');
+  var w=canvas.width=canvas.parentElement.clientWidth-40;
+  var h=canvas.height=200;
+  ctx.clearRect(0,0,w,h);
+  var data=sessions.slice().reverse();
+  if(!data.length){ctx.fillStyle='#8b8d97';ctx.font='14px sans-serif';ctx.fillText('No session data yet',w/2-50,h/2);return;}
+  var barW=Math.min(40,(w-60)/data.length-4);
+  var maxInt=Math.max.apply(null,data.map(function(s){return s.interactions||0;}))||1;
+  var MOOD_COLORS={joy:'#22c55e',sadness:'#3b82f6',anger:'#ef4444',fear:'#a855f7',surprise:'#eab308',neutral:'#8b8d97'};
+  data.forEach(function(s,i){
+    var barH=((s.interactions||0)/maxInt)*(h-50);
+    var x=30+i*(barW+4);
+    var y=h-30-barH;
+    ctx.fillStyle=MOOD_COLORS[s.dominant_mood]||'#555';
+    ctx.beginPath();ctx.roundRect(x,y,barW,barH,3);ctx.fill();
+    ctx.fillStyle='#e4e4e7';ctx.font='10px sans-serif';ctx.textAlign='center';
+    ctx.fillText(s.interactions||0,x+barW/2,y-4);
+    ctx.fillStyle='#8b8d97';ctx.font='9px sans-serif';
+    var d=new Date(s.created_at);
+    ctx.fillText((d.getMonth()+1)+'/'+d.getDate(),x+barW/2,h-12);
+  });
+}
+
+function renderTopics(){
+  var el=document.getElementById('topicsList'), empty=document.getElementById('topicsEmpty');
+  var counts={};
+  sessions.forEach(function(s){
+    (s.topics_discussed||[]).forEach(function(t){
+      if(t&&t!=='general') counts[t]=(counts[t]||0)+1;
+    });
+  });
+  var sorted=Object.entries(counts).sort(function(a,b){return b[1]-a[1];}).slice(0,10);
+  if(!sorted.length){el.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  var max=sorted[0][1];
+  el.innerHTML=sorted.map(function(e){
+    var pct=Math.round(e[1]/max*100);
+    return '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);">'+
+      '<div style="flex:1;"><div style="font-size:13px;">'+e[0]+'</div>'+
+      '<div style="width:100%;height:6px;background:var(--input-bg);border-radius:3px;margin-top:3px;">'+
+      '<div style="width:'+pct+'%;height:100%;background:#22c55e;border-radius:3px;"></div></div></div>'+
+      '<span style="font-size:12px;color:var(--muted);">'+e[1]+' sessions</span></div>';
+  }).join('');
+}
+
+load();
+</script>
+{% endblock %}
